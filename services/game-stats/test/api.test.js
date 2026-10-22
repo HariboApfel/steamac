@@ -201,3 +201,77 @@ it("does not serve cached individual-session responses from the old API", async 
   expect(game).not.toHaveProperty("recent");
   expect(game.sessions).toBe(1);
 });
+
+async function seedHardwareReports() {
+  for (const [chip, gpu, ram, pcores, fps, rating] of [
+    ["Apple M1", 16, 16, 4, 20, "well"],
+    ["Apple M3", 32, 64, 8, 60, "issues"],
+    ["Apple M4", null, 32, null, 100, "no_start"],
+  ]) {
+    const body = sample();
+    Object.assign(body.mac, { chip, ram_gb: ram });
+    if (gpu === null) delete body.mac.gpu_cores; else body.mac.gpu_cores = gpu;
+    if (pcores === null) delete body.mac.pcores; else body.mac.pcores = pcores;
+    body.fps.avg = fps;
+    expect((await request("/v1/sessions", body)).status).toBe(201);
+    expect((await request("/v1/ratings", { ...body, rating })).status).toBe(200);
+  }
+}
+it.each([
+  ["max_gpu_cores=16", ["Apple M1"], 20, { well: 1, issues: 0, no_start: 0 }],
+  ["max_ram_gb=32", ["Apple M1", "Apple M4"], 60, { well: 1, issues: 0, no_start: 1 }],
+  ["max_pcores=8", ["Apple M1", "Apple M3"], 40, { well: 1, issues: 1, no_start: 0 }],
+  ["max_gpu_cores=32&max_ram_gb=32&max_pcores=8", ["Apple M1"], 20, { well: 1, issues: 0, no_start: 0 }],
+])("filters every aggregate with %s, excluding unknown values only for active dimensions", async (query, chips, fps, ratings) => {
+  await seedHardwareReports();
+  const list = await (await request(`/v1/games?${query}`)).json();
+  expect(list.games).toHaveLength(1);
+  expect(list.games[0]).toMatchObject({ sessions: chips.length, installs: chips.length, fps_avg_median: fps, chips, ratings });
+  expect(list.games[0].play_hours).toBeCloseTo(chips.length * 1700 / 3600);
+  const game = await (await request(`/v1/games/1091500?${query}`)).json();
+  expect(game).toMatchObject({ sessions: chips.length, chips, fps_avg_median: fps, ratings });
+  expect(game.configs.map((config) => config.chip)).toEqual(chips);
+  for (const config of game.configs) expect(config).toMatchObject({ sessions: 1, installs: 1, launch_rate: 1 });
+  expect(game).not.toHaveProperty("recent");
+});
+it("filters rating-only games and returns an empty list / 404 when no reports remain", async () => {
+  const rating = { ...sample({ appid: 620, game: "Portal 2" }), rating: "well" };
+  Object.assign(rating.mac, { gpu_cores: 16, ram_gb: 16, pcores: 4 });
+  expect((await request("/v1/ratings", rating)).status).toBe(200);
+  const included = await (await request("/v1/games?max_gpu_cores=16&max_ram_gb=16&max_pcores=4")).json();
+  expect(included.games[0]).toMatchObject({ sessions: 0, chips: ["Apple M3 Max"], ratings: { well: 1 } });
+  const excluded = await (await request("/v1/games?max_gpu_cores=15")).json();
+  expect(excluded.games).toEqual([]);
+  expect((await request("/v1/games/620?max_gpu_cores=15")).status).toBe(404);
+});
+it.each(["max_gpu_cores", "max_ram_gb", "max_pcores"].flatMap((key) =>
+  ["", "0", "-1", "1.5", "1e2", "NaN", " 2", "999999999999999999999", key === "max_pcores" ? "1025" : "4097"].map((value) => [key, value])
+))("rejects invalid %s=%s for list and detail", async (key, value) => {
+  const query = new URLSearchParams({ [key]: value });
+  expect((await request(`/v1/games?${query}`)).status).toBe(400);
+  expect((await request(`/v1/games/1091500?${query}`)).status).toBe(400);
+});
+it.each(["max_gpu_cores", "max_ram_gb", "max_pcores"])("rejects repeated %s values", async (key) => {
+  expect((await request(`/v1/games?${key}=1&${key}=2`)).status).toBe(400);
+});
+it("accepts hardware filter upper bounds", async () => {
+  expect((await request("/v1/games?max_gpu_cores=4096&max_ram_gb=4096&max_pcores=1024")).status).toBe(200);
+});
+it("separates hardware caches and normalizes parameter order and leading zeroes", async () => {
+  await seedHardwareReports();
+  const unfiltered = await (await request("/v1/games")).json();
+  expect(unfiltered.games[0].sessions).toBe(3);
+  const filtered = await (await request("/v1/games?max_gpu_cores=016&max_ram_gb=016")).json();
+  expect(filtered.games[0].sessions).toBe(1);
+  const body = sample();
+  Object.assign(body.mac, { gpu_cores: 16, ram_gb: 16, pcores: 4 });
+  expect((await request("/v1/sessions", body)).status).toBe(201);
+  const normalized = await (await request("/v1/games?max_ram_gb=16&max_gpu_cores=16")).json();
+  expect(normalized.games[0].sessions).toBe(1);
+  const distinct = await (await request("/v1/games?max_gpu_cores=32&max_ram_gb=16")).json();
+  expect(distinct.games[0].sessions).toBe(2);
+  const detail = await (await request("/v1/games/1091500?max_gpu_cores=16")).json();
+  expect(detail.sessions).toBe(2);
+  const detailUnfiltered = await (await request("/v1/games/1091500")).json();
+  expect(detailUnfiltered.sessions).toBe(4);
+});

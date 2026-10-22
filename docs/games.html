@@ -28,6 +28,15 @@
   .stats-tools { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin-bottom: 20px; }
   .stats-tools label { display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
   .stats-tools label:first-child { flex: 1; min-width: 200px; }
+  .my-mac { border-bottom: 1px solid var(--line); margin-bottom: 22px; padding-bottom: 12px; }
+  .my-mac fieldset { border: 0; margin: 0; padding: 0; }
+  .my-mac legend { font-size: 18px; font-weight: 650; margin-bottom: 12px; }
+  .my-mac-toggle { display: flex; align-items: center; gap: 10px; }
+  .my-mac-toggle input { accent-color: var(--steam); }
+  .my-mac-fields { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+  .my-mac-fields label { display: grid; gap: 5px; color: var(--muted); font-size: 13px; }
+  .my-mac-fields input { width: 150px; }
+  .my-mac-fields input[type="text"] { width: 220px; max-width: 100%; }
   .stats-main input, .stats-main select, .stats-retry { color: var(--text); background: var(--bg2); border: 1px solid rgba(255,255,255,.18); border-radius: 8px; padding: 10px 12px; font: inherit; }
   .stats-main input:focus-visible, .stats-main select:focus-visible, .stats-main a:focus-visible, .stats-retry:focus-visible { outline: 2px solid var(--steam2); outline-offset: 3px; }
   .stats-scroll { overflow-x: auto; }
@@ -68,6 +77,20 @@
   </div>
   <section class="stats-panel" aria-labelledby="games-title">
     <h2 id="games-title"><span lang="en">Community sessions</span><span lang="ru">Сеансы сообщества</span><span lang="zh">社区会话</span></h2>
+    <form id="my-mac" class="my-mac">
+      <fieldset>
+        <legend><span lang="en">My Mac</span><span lang="ru">Мой Mac</span><span lang="zh">我的 Mac</span></legend>
+        <label class="my-mac-toggle"><input id="my-mac-enabled" type="checkbox"><span><span lang="en">Only Macs no better than mine</span><span lang="ru">Только Mac не мощнее моего</span><span lang="zh">仅显示不强于我的 Mac</span></span></label>
+        <div class="my-mac-fields">
+          <label><span><span lang="en">GPU cores</span><span lang="ru">Ядра GPU</span><span lang="zh">GPU 核心数</span></span><input id="my-gpu" type="number" min="1" max="4096" step="1" inputmode="numeric"></label>
+          <label><span><span lang="en">RAM (GB)</span><span lang="ru">ОЗУ (ГБ)</span><span lang="zh">内存（GB）</span></span><input id="my-ram" type="number" min="1" max="4096" step="1" inputmode="numeric"></label>
+          <label><span><span lang="en">CPU performance cores</span><span lang="ru">Производительные ядра CPU</span><span lang="zh">CPU 性能核心数</span></span><input id="my-pcores" type="number" min="1" max="1024" step="1" inputmode="numeric"></label>
+          <label><span><span lang="en">Chip name (optional label)</span><span lang="ru">Название чипа (необязательно)</span><span lang="zh">芯片名称（可选标签）</span></span><input id="my-chip" type="text" maxlength="64" autocomplete="off"></label>
+        </div>
+      </fieldset>
+      <p id="my-mac-summary" class="stats-note" aria-live="polite"></p>
+      <p class="stats-note"><span lang="en">Compared by core counts and RAM, not chip generation. Empty fields impose no limit. Reports with unknown values are excluded for each active limit. This is a useful comparison, not a guarantee of compatibility.</span><span lang="ru">Сравниваются количество ядер и объём ОЗУ, а не поколение чипа. Пустое поле не ограничивает выборку. При заданном ограничении отчёты с неизвестным значением исключаются. Это ориентир, а не гарантия совместимости.</span><span lang="zh">按核心数和内存比较，不比较芯片代际。留空表示不限制；启用某项限制时，排除该项数据未知的报告。此比较仅供参考，不保证兼容性。</span></p>
+    </form>
     <div class="stats-tools">
       <label><span><span lang="en">Search by game, Steam app ID or Mac chip</span><span lang="ru">Поиск по игре, Steam app ID или чипу Mac</span><span lang="zh">搜索游戏、Steam 应用 ID 或 Mac 芯片</span></span><input id="search" type="search" autocomplete="off"></label>
       <label><span><span lang="en">Sort by</span><span lang="ru">Сортировка</span><span lang="zh">排序</span></span><select id="sort"></select></label>

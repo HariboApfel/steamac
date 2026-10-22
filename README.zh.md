@@ -690,6 +690,13 @@ download|skip|later|ok|releases`、`update dump PNG`（窗口与 `-with-vm.png`�
 隐私：不包含姓名、用户名或计算机名、Steam 账号、文件或输入的文字；安装 ID 为随机 UUID，
 仅用于统计不同 Mac 的数量及限流（不是崩溃报告的 ID）；服务仅将客户端地址用作临时限流键，绝不保存。
 
+页面只公布聚合数据（按游戏及芯片 / 内存 / 驱动 / wmtr 分组），绝不公布单次会话，
+并列出每款游戏已测试的芯片。**我的 Mac** 筛选器仅保留配置不高于访问者 Mac 的报告
+（GPU 核心数、内存与性能核心数均不超过给定值；API 参数为 `max_gpu_cores`、
+`max_ram_gb`、`max_pcores`）：能在那里运行的游戏，应该也能在这里运行。
+启动器中的**打开统计页面**会传入本 Mac 的参数（`?chip=…&gpu=…&ram=…&pcores=…`）
+并开启筛选器；页面会记住这些参数。
+
 服务：`services/game-stats`——使用 D1 数据库的 Cloudflare Worker（严格校验、幂等会话 ID、
 每个地址每分钟 30 次 POST、每个安装的每日上限、缓存 5 分钟的聚合数据
 `GET /v1/games` 与 `GET /v1/games/<appid>`）。首次部署：

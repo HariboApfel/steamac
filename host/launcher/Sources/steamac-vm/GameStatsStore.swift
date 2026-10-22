@@ -18,8 +18,16 @@ import SwiftUI
 final class GameStatsStore: ObservableObject {
     static let shared = GameStatsStore()
     static let urlEnv = "STEAMAC_GAME_STATS_URL", fileEnv = "STEAMAC_GAME_STATS_FILE"
-    /// The public statistics page.
-    static let pageURL = URL(string: "https://fxgl.github.io/steamac/games.html")!
+    /// The public statistics page, opened with this Mac's chip, GPU cores, RAM and performance
+    /// cores: its "My Mac" filter then shows only reports from Macs that are not better.
+    static let pageURL: URL = {
+        let mac = GameStatsMac.current
+        var c = URLComponents(string: "https://fxgl.github.io/steamac/games.html")!
+        c.queryItems = [URLQueryItem(name: "chip", value: mac.chip), URLQueryItem(name: "ram", value: String(mac.ramGB))]
+            + (mac.gpuCores.map { [URLQueryItem(name: "gpu", value: String($0))] } ?? [])
+            + (mac.pcores.map { [URLQueryItem(name: "pcores", value: String($0))] } ?? [])
+        return c.url!
+    }()
     /// Recorded sessions kept per game (newest first).
     static let sessionsPerGame = 20
     static let retryInterval: TimeInterval = 10 * 60

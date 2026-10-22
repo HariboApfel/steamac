@@ -944,6 +944,13 @@ Privacy: no name, user or computer name, Steam account, files or typed text; the
 random UUID used only for distinct-Mac counts and rate limits (not the crash reports' ID); the
 service uses the client address only as a transient rate-limit key and never stores it.
 
+The page publishes aggregates only (per game and per chip / RAM / driver / wmtr), never single
+sessions, and lists the chips each game was tested on. Its **My Mac** filter keeps only reports
+from Macs that are not better than the visitor's (GPU cores, RAM and performance cores each at most
+the given value; the API's `max_gpu_cores`, `max_ram_gb`, `max_pcores`): what runs there should
+run here. **Open Statistics Page** in the launcher passes this Mac's values (`?chip=…&gpu=…&ram=…&pcores=…`)
+and turns the filter on; the page remembers them.
+
 Service: `services/game-stats` — a Cloudflare Worker with a D1 database (strict validation,
 idempotent session IDs, 30 POSTs per minute per address, a daily cap per install, 5-minute cached
 aggregates `GET /v1/games` and `GET /v1/games/<appid>`). Deploy once:
