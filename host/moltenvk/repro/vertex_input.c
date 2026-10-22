@@ -25,6 +25,11 @@
  *                          object stage fetches the vertices, no Metal vertex descriptor): zero strides,
  *                          static and dynamic, an undescribed binding (the object stage read an unbound
  *                          Metal buffer) and a missing attribute
+ *   float*_int*            BLUE REFLECTION (STEAMAC-3N): float vertex formats with integer shader inputs,
+ *                          including Float3 -> int4 (Metal supplies w = 1), scalar and truncated inputs
+ *   uint_int / int_uint    signedness mismatches, including high-bit values, bits preserved on fetch
+ *   uint_float / int_float integer vertex formats with floating-point shader inputs, fetched bits preserved
+ *   float_int_array        flattened shader input array, each element converted independently
  *
  *   vertex_input <spv dir> [case]
  */
@@ -112,6 +117,10 @@ struct test {
 	int gs;							/* through vi_points.geom (geometry shader emulation, no Metal vertex descriptor) */
 	int expect_fail;
 	int expect[W];					/* element read by point i */
+	VkFormat format1;				/* zero: the ordinary RGBA32_SFLOAT color input */
+	const char *shader;
+	int integer_bits;				/* signedness cases use high-bit integer payloads */
+	int input_array;				/* second numeric attribute at location 2, same binding */
 };
 
 static const struct test tests[] = {
@@ -131,6 +140,24 @@ static const struct test tests[] = {
 	{ "gs_dynamic_stride",    VK_VERTEX_INPUT_RATE_VERTEX,   16, 0, .gs = 1, .dynamic = 1, .expect = { 0, 1, 2, 3 } },
 	{ "gs_undescribed_binding", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .gs = 1, .undescribed = 1, .expect_fail = 1 },
 	{ "gs_missing_attribute", VK_VERTEX_INPUT_RATE_VERTEX,   16, 0, .gs = 1, .missing1 = 1 },
+	{ "float3_int4", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32G32B32_SFLOAT, .shader = "vi_int.vert.spv" },
+	{ "float4_int4", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32G32B32A32_SFLOAT, .shader = "vi_int.vert.spv" },
+	{ "float1_int", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32_SFLOAT, .shader = "vi_int_scalar.vert.spv" },
+	{ "float4_int3", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32G32B32A32_SFLOAT, .shader = "vi_int3.vert.spv" },
+	{ "uint_int", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32G32B32A32_UINT, .shader = "vi_bits_int.vert.spv", .integer_bits = 1 },
+	{ "int_uint", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32G32B32A32_SINT, .shader = "vi_bits_uint.vert.spv", .integer_bits = 1 },
+	{ "uint_float", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32G32B32A32_UINT },
+	{ "int_float", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32G32B32A32_SINT },
+	{ "float_int_array", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_R32G32_SFLOAT, .shader = "vi_int_array.vert.spv", .input_array = 1 },
 };
 enum { NTESTS = sizeof(tests) / sizeof(tests[0]) };
 
@@ -198,7 +225,8 @@ static int run(const struct test *t)
 	VkPipelineLayout layout;
 	CK(vkCreatePipelineLayout(dev, &plci, NULL, &layout));
 	VkPipelineShaderStageCreateInfo stages[3] = {
-		{ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = module("vi.vert.spv"), .pName = "main" },
+		{ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT,
+			.module = module(t->shader ? t->shader : "vi.vert.spv"), .pName = "main" },
 		{ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = module("vi.frag.spv"), .pName = "main" },
 		{ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_GEOMETRY_BIT, .module = t->gs ? module("vi_points.geom.spv") : VK_NULL_HANDLE, .pName = "main" },
 	};
@@ -206,9 +234,10 @@ static int run(const struct test *t)
 		{ 0, 8, t->rate },
 		{ 1, t->stride1, t->rate },
 	};
-	VkVertexInputAttributeDescription attrs[2] = {
+	VkVertexInputAttributeDescription attrs[3] = {
 		{ 0, 0, VK_FORMAT_R32G32_SFLOAT, 0 },
-		{ 1, 1, VK_FORMAT_R32G32B32A32_SFLOAT, t->offset1 },
+		{ 1, 1, t->format1 ? t->format1 : VK_FORMAT_R32G32B32A32_SFLOAT, t->offset1 },
+		{ 2, 1, VK_FORMAT_R32G32_SFLOAT, 8 },
 	};
 	VkVertexInputBindingDivisorDescription div = { 1, 0 };
 	VkPipelineVertexInputDivisorStateCreateInfo divci = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO,
@@ -216,7 +245,7 @@ static int run(const struct test *t)
 	VkPipelineVertexInputStateCreateInfo vi = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
 		.pNext = t->divisor0 ? &divci : NULL,
 		.vertexBindingDescriptionCount = t->no_bindings ? 0 : t->undescribed || t->missing1 ? 1 : 2, .pVertexBindingDescriptions = bindings,
-		.vertexAttributeDescriptionCount = t->missing1 ? 1 : 2, .pVertexAttributeDescriptions = attrs };
+		.vertexAttributeDescriptionCount = t->missing1 ? 1 : t->input_array ? 3 : 2, .pVertexAttributeDescriptions = attrs };
 	VkPipelineInputAssemblyStateCreateInfo ia = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
 		.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST };
 	VkViewport vp = { 0, 0, W, 1, 0, 1 };
@@ -255,8 +284,14 @@ static int run(const struct test *t)
 		pos[2 * i] = (2.0f * (float)i + 1.0f) / (float)W - 1.0f;
 		pos[2 * i + 1] = 0.0f;
 	}
-	for (int k = 0; k < 16; k++)
-		color(k, cols + 4 * k);
+	for (int k = 0; k < 16; k++) {
+		if (t->integer_bits) {
+			uint32_t bits[4] = { 0x80000000u | (k + 1), 0xffffffffu, 0x80000000u, 0x7fffffffu };
+			memcpy(cols + 4 * k, bits, sizeof(bits));
+		} else {
+			color(k, cols + 4 * k);
+		}
+	}
 
 	VkCommandBufferAllocateInfo cai = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = pool, .commandBufferCount = 1 };
 	VkCommandBuffer cmd;
