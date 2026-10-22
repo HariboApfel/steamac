@@ -5609,6 +5609,22 @@
         }
       }
     },
+    "The drive disconnected or reported an I/O error. Check its connection and run Disk Utility First Aid, then try again; use another drive if the error continues." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Диск отключился или сообщил об ошибке ввода-вывода. Проверьте подключение и запустите «Первую помощь» в Дисковой утилите, затем повторите попытку; если ошибка повторяется, используйте другой диск."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "磁盘已断开或报告 I/O 错误。请检查连接并运行“磁盘工具”的“急救”，然后重试；若错误持续，请使用其他磁盘。"
+          }
+        }
+      }
+    },
     "The guest gets the screen's full pixel density (2 × 2 pixels per point on Retina screens), with the UI scaled to the same size: sharp text, but games draw 4× the pixels. Recommended instead: leave this off and turn on MetalFX super resolution, which upscales the guest 2× to the Retina screen at a fraction of the cost." : {
       "localizations" : {
         "ru" : {
@@ -5669,6 +5685,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "启动器最近约 200 行日志（启动器、MoltenVK、libkrun 和 virglrenderer 消息；个人文件夹路径缩写为 ~）及启动阶段。"
+          }
+        }
+      }
+    },
+    "The location is read-only. Choose a writable folder, not the mounted FX Steam Launcher installer." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это место доступно только для чтения. Выберите папку с правом записи, а не смонтированный установщик FX Steam Launcher."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此位置为只读。请选择可写文件夹，不要选择已挂载的 FX Steam Launcher 安装映像。"
           }
         }
       }
@@ -5819,6 +5851,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "虚拟机意外终止（%@）。"
+          }
+        }
+      }
+    },
+    "The volume ran out of space while creating SteamOS. Free some space or choose another volume, then try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Во время создания SteamOS на томе закончилось место. Освободите место или выберите другой том и повторите попытку."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建 SteamOS 时卷空间已耗尽。请释放空间或选择其他卷，然后重试。"
+          }
+        }
+      }
+    },
+    "There is no permission to write to the disk or download cache. Choose a writable folder or check Finder → Get Info → Sharing & Permissions." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет права записи на диск или в кеш загрузок. Выберите папку с правом записи или проверьте Finder → Свойства → Общий доступ и права доступа."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有写入磁盘或下载缓存的权限。请选择可写文件夹，或检查“访达”→“显示简介”→“共享与权限”。"
           }
         }
       }
@@ -6927,22 +6991,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无权创建 %@：请选择可写入的文件夹"
-          }
-        }
-      }
-    },
-    "no permission to write in %@: choose a folder you can write to, or allow writing in Finder → Get Info → Sharing & Permissions" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "нет разрешения на запись в %@: выберите папку с доступом на запись или разрешите запись в Finder → «Свойства» → «Общий доступ и права доступа»"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无权在 %@ 中写入：请选择可写入的文件夹，或在“访达 → 显示简介 → 共享与权限”中允许写入"
           }
         }
       }

@@ -312,6 +312,13 @@ macOS GameController 框架支持的任何控制器（Xbox、DualSense、DualSho
 - **DualSense** / **DualShock 4**：USB 手柄的 `hid-playstation` / `hid-sony` 呈现的样子
   （`054c:0ce6` / `054c:09cc`，版本 `0x8111`，按键按位置，模拟扳机旁另有数字 L2/R2）。Steam 的 SDL 将其映射为 PS5 / PS4 手柄并显示 PlayStation 图标。
 
+**Home / PS 按钮诊断。** 启动器请求 macOS 将此按钮留给 SteamOS，但系统不保证遵从。
+如果 USB 正常而蓝牙无效，请比较设置 → 控制器中的 **Home** 实时指示器，在两种连接下
+分别按下并松开按钮后提交报告。启动器日志记录 GameController 是否提供 Home、系统手势绑定、
+按钮及配置文件回调，以及事件是否进入客户机手柄端口队列；`pad state` 也包含 Home 当前状态。
+这些信息用于区分 Mac 输入处理与客户机传递故障，不能将所有蓝牙故障都归因于 DualSense
+直通（DualShock 4 使用虚拟手柄）。
+
 **振动。** 手柄带 `FF_RUMBLE`，如真实驱动，SDL 与 Steam 可驱动振动——经 Steam Input 的游戏经 Steam 虚拟 Xbox 手柄触达。uinput 把回放交给用户态驱动：`fx-pad` 实现内核 ff-memless 规则（延迟、时长、重复、重载、效果叠加）并向启动器发送合成等级 `rumble <strong> <weak>`，启动器用 GameController 触觉播放：强电机左手、弱电机右手（无分 TW 电机的控制器 whole one level）；虚拟机挂起期间无振动。端口协议：`guest/progress-agent/src/pad.rs`。触摸板、陀螺仪、光条与自适应扳机是真实控制器的 HID 功能，该 evdev 设备没有。
 
 **DualSense 直通。** 当 DualSense（或 Edge）驱动手柄且呈现为 DualSense 时，设置 → 控制器 → **直通 DualSense**（默认开，立即生效）把控制器本身而非 uinput 手柄交给 SteamOS。启动器以裸 HID 设备打开它
@@ -378,9 +385,13 @@ work/out/steamac-vm --create-disk ~/steamos.img [--branch stable] [--home-gib 64
 
 外接 APFS、Mac OS 扩展与 exFAT 卷可存放磁盘。FAT32/MS-DOS 因 4 GiB 单文件限制在下载前拒绝
 （临时 rootfs 就 10 GiB）。只读卷和没有写入权限的文件夹同样会被拒绝。与 APFS 不同，exFAT 无稀疏文件：即使游戏还没装，也需要所选磁盘全尺寸加临时 rootfs 的空间。下载缓存在 exFAT 上也远超其约 4.4 GB 的数据：macOS 把每个分块文件的来源（provenance）属性存进额外的 `._` 文件，且每个文件和文件夹都占用整簇（2 TB 盘上为 128 KiB），合计约 28 GB。启动器先检查空间再重建 rootfs；在 exFAT 上，若卷空间不足，会在分配磁盘前删除分块缓存（`--keep-cache` 保留缓存，需要两者的空间）。
-这些预期拒绝（包括目标文件已存在、下载缓存正被使用、创建期间卷被写满，以及 desync 重试后仍失败的下载——下次尝试会从分块缓存继续）只记入日志，不作为错误发送到 Sentry。
-非预期创建失败仍会上报：Foundation 错误按域和错误码分组，desync 失败按其自身的 `Error:` 行分组（不含分块 ID），原始技术诊断放在事件详情中，
-而不是把指针或任务 ID 放进标题。
+预期存储错误（目标已存在、缓存正被使用、只读卷、没有写入权限、空间耗尽、磁盘断开或文件系统 I/O 错误）
+会显示处理建议并只记日志，不作为错误发送到 Sentry；创建开始后的错误也遵循此规则。元数据/包下载的网络错误
+（离线、DNS、超时、连接中断和系统 TLS 验证拒绝）与 desync 重试耗尽一样处理，绝不绕过 HTTPS 证书验证。
+非预期创建错误和包签名错误仍会上报，事件详情保留原始诊断。
+启动器记录目标和缓存的文件系统类型。缓存分块重命名冲突时，以单工作线程、不使用缓存重试一次。
+rootfs 哈希不符时再顺序读取，以区分错误的稀疏区段元数据和文件字节损坏；若字节损坏，则删除临时 rootfs 与分块缓存，
+以单工作线程、不使用缓存重新下载一次，重试前清空两个磁盘槽。再次校验失败仍会上报；哈希不匹配签名清单就不发布磁盘。
 
 如果下载无法安全连接到 Valve，窗口会提示 VPN、代理或网络过滤器可能造成干扰：
 请尝试关闭它们或更换网络。连接 GitHub 的更新检查也会给出同样建议。
@@ -406,13 +417,14 @@ work/out/steamac-vm --create-disk ~/steamos.img [--branch stable] [--home-gib 64
    esp/efi-X/var-X/home，使 rootfs-B fsid 唯一，写入 partsets/bootconf/bootenv/var，
    并上报 `provision done`——之后启动器删除载荷；后续启动不再使用。
 
-空间：创建期间磁盘卷约 14 GB（成功后约 9 GB），缓存约 6 GB（除非 `--keep-cache`，成功后删除）。检查：`work/out/steamac-vm --selftest-provision`——
+支持稀疏文件的卷：创建期间磁盘卷约 20 GB（成功后约 9 GB），另加约 6 GB 缓存。macOS 上的 desync 即使在 APFS 上也会预分配完整的 10 GiB 临时 rootfs；只有目标的两个槽保持稀疏。
+空间预检包含此分配和安全余量（SteamOS 20261007 共约 27 GB）。除非 `--keep-cache`，成功后删除缓存。检查：`work/out/steamac-vm --selftest-provision`——
 GPT 对 Docker 构建磁盘（`work/out/steamos.img` 只读打开；
 `--reference-disk IMG`），CMS/squashfs 对 `work/cache/rootfs` 缓存，cpio、SHA-512 crypt。
-自测还检查网络提示、稳定的错误指纹，以及仅记日志的位置拒绝。
+自测还检查网络提示、网络/文件系统预期错误只记日志、非预期错误仍上报，以及稀疏/顺序读取 rootfs 后两个槽的内容。
 要在不发送任何事件的情况下触发真实 TLS 失败，运行 `--selftest-provision` 时将
 `STEAMAC_PROVISION_TEST_TLS_URL=https://localhost:PORT/` 指向使用不受信任证书的本地服务器；
-它会打印提示、标题与指纹。
+它会打印提示并检查不会产生报告。
 
 ## Steam 客户端
 
@@ -517,6 +529,11 @@ SDK 根本不启动、不联网（已落盘报告保留在原处、不发送）�
   管线编译错误（`[mvk-error] … compile failed`；MoltenVK 若打印 MSL 源码
   （`[mvk-msl] …`：前 40 行与出错前后行）放 extra `msl_source` 而非面包屑；vkr “pipeline … creation failed on host” 只做面包屑）、libkrun 中 Rust panic（`thread … panicked at`）、首次磁盘预配失败（`provision
   failed`）、磁盘创建失败、非预期虚拟机退出（用户未要求关机时的非零退出码或信号）与空闲指示器“SteamOS 无响应…”；
+  “SteamOS 无响应”报告附带 `stall_history`：最多 32 个每秒采样的 GPU 命令计数、心跳时长、
+  客户机运行时间/负载、进程 CPU 时间和宿主轮询间隔，即使未开启性能统计也会收集（STEAMAC-8）。
+  仅代理心跳停止，并不能证明整个客户机或 GPU 已经挂起。
+  空闲指示器持续 10 秒时，同样的采样会写入日志一次，即使心跳仍正常，
+  因此无需启用性能统计，“报告问题”也可包含游戏卡顿的诊断信息。
 - SIGTERM/SIGINT/SIGHUP 退出的虚拟机（注销、`kill`、处理器安装前的 ^C）不是崩溃：只有日志行，无事件、无报告问题窗口。SIGPIPE 也不是（两进程都忽略：输出管道关闭——终端，或监管器被杀后的监管器 stderr 通道——只失败该次写；虚拟机进程转而记到
   `~/Library/Logs/es.fxgam.steamac/steamac-vm.log` 或丢弃这些行，让客户机继续关完；STEAMAC-10）。SIGKILL 生成
   warning 级 `vm-killed` 事件，“VM process killed (SIGKILL — memory pressure or force quit)”：
@@ -528,6 +545,8 @@ SDK 根本不启动、不联网（已落盘报告保留在原处、不发送）�
   监管器的报告附上 macOS 自己的崩溃报告（`~/Library/Logs/DiagnosticReports/steamac-vm-*.ips`，按 pid 匹配）：
   标题与 `crash_site` 标签中的崩溃位置（报告按其分组），extra `macos_crash_report` 中的异常、Application Specific
   Information 行（堆损坏陷阱时 libmalloc 的消息）及崩溃线程前 16 帧（库名与符号名）；
+  `memory_history` 增加最多两分钟的退出前虚拟机 footprint 与宿主内存采样（每 10 秒一次）；
+  报告时的独立快照标为退出后状态，因为虚拟机内存已释放。
 - 每个事件附带启动器 stderr 最近约 200 行做面包屑（`[steamac-vm]`、
   `[mvk-*]`、libkrun/virglrenderer 警告、启动阶段）与标签：版本
   （`es.fxgam.steamac@<CFBundleShortVersionString>+<git sha>`）、环境与 `build_kind` 标签：
@@ -585,7 +604,8 @@ download|skip|later|ok|releases`、`update dump PNG`（窗口与 `-with-vm.png`�
   用户名、电脑名、邮箱与 IP 脱敏；
 - **包含 SteamOS 日志（系统日志、Steam/Proton 日志）**（默认勾）——本会话客户机控制台（hvc0）与客户机代理收集的 `steamos-logs.tar.gz`：本次启动 systemd journal
   （`journalctl -b`，最近 5000 行，加用户 journal）、`coredumpctl list`/`info`、
-  `dmesg`、`systemctl --failed`、`os-release`、`layer-release`、`/proc/cmdline`、`df`/`free`、Steam
+  `dmesg`、`systemctl --failed`、`os-release`、`layer-release`、`/proc/cmdline`、`df`/`free`、
+  线程 ID/状态/CPU/等待通道与命令名（`threads.txt`，不含命令参数）、Steam
   客户端日志尾（`console_log`、`stderr`、`bootstrap_log`、`compat_log`、`connection_log`、
   `webhelper`、`cef_log`、`shader_log`、`steamui_*`、Steam Input 的 `controller`、`controller_ui` 与
   `cloud_log`）与 Proton 日志（`PROTON_LOG=1` 的 `~/steam-*.log`、

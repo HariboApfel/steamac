@@ -425,7 +425,7 @@ do {
         return r == 0 || r == -ENOTSUP ? (ctrl, ring) : nil
     }
     let stall = StallMonitor(view: wc.stallView, sample: gpuCounters)
-    stall.onNotResponding = { CrashReporting.stallNotResponding(seconds: $0) }
+    stall.onNotResponding = { CrashReporting.stallNotResponding($0) }
     wc.attach(stall: stall)
     // After `ready`: "Waiting for SteamOS to draw…" when the window shows no / a black picture.
     let noPicture = NoPictureGuard { presenter.scanout.probe(sampleIfNewerThan: $0) }

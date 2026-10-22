@@ -493,7 +493,7 @@ enum CrashReporting {
             // jetsam (the kernel's memory kill) or someone's SIGKILL: Force Quit in the Dock or
             // the Force Quit window, Activity Monitor, kill -9.
             let host = HostMemory.current()
-            let pressure = memoryWatch.summary()
+            let pressure = memoryWatch.summary(including: host.pressure)
             let reason = exit.detail == nil ? "unknown" : exit.killedForMemory ? "jetsam" : "not-jetsam"
             let detail = exit.detail.map { " (exit detail 0x\(String($0, radix: 16)))" } ?? ""
             let lines = [
@@ -501,14 +501,15 @@ enum CrashReporting {
                 "killed by the kernel for memory (jetsam): \(reason == "jetsam" ? "yes" : reason == "unknown" ? "unknown" : "no")\(detail)",
                 "VM memory \(locked { tags["vm_mem_mib"] } ?? "?") MiB; VM process peak footprint "
                     + (exit.peakFootprint.map(gib) ?? "?"),
-                host.summary,
+                "host memory after exit: " + host.summary,
                 "memory pressure since the VM started: " + pressure.text,
             ]
             exitTags["kill_reason"] = reason
             exitTags["memory_pressure"] = host.pressure
             exitTags["memory_pressure_max"] = pressure.maxLevel
             if let pct = host.availablePercent { exitTags["host_mem_available_pct"] = String(pct) }
-            report(.vmKilled, key: reason, message: lines.joined(separator: "\n"), level: .warning, tags: exitTags)
+            report(.vmKilled, key: reason, message: lines.joined(separator: "\n"), level: .warning, tags: exitTags,
+                   extra: ["memory_history": memoryWatch.recentSamples()])
         } else {
             let lastError = last.map { ": \($0)" } ?? ""
             var key = signal != 0 ? signalName(signal) : "status \(exit.status)"
@@ -544,9 +545,11 @@ enum CrashReporting {
 
     // MARK: VM-process hooks
 
-    static func stallNotResponding(seconds: TimeInterval) {
-        report(.notResponding, key: "not-responding", message: "SteamOS not responding (no GPU work for \(Int(seconds)) s)",
-               tags: ["stall_seconds": String(Int(seconds))])
+    static func stallNotResponding(_ diagnostic: StallMonitor.Diagnostic) {
+        report(.notResponding, key: "not-responding", message: "SteamOS not responding (no GPU work for \(Int(diagnostic.idle)) s)",
+               tags: ["stall_seconds": String(Int(diagnostic.idle)),
+                      "heartbeat_age_seconds": String(Int(diagnostic.heartbeatAge))],
+               extra: ["stall_history": diagnostic.history])
     }
 
     static func provisionFailed(reason: String) {
@@ -558,8 +561,8 @@ enum CrashReporting {
     /// OptionError has no meaningful numeric code: retain its normalised diagnostic so bugs
     /// such as failed publication and bundle verification do not collapse into one issue.
     static func diskCreationReport(_ error: Error) -> (key: String, message: String, extra: [String: String])? {
-        guard !(error is DiskCreationFilesystem.Rejection), !(error is DiskCreator.Cancelled),
-              !(error is RaucBundle.DevelopmentSignature) else { return nil }
+        guard DiskCreationFilesystem.rejection(error) == nil, !NetworkFailure.isExpected(error),
+              !(error is DiskCreator.Cancelled), !(error is RaucBundle.DevelopmentSignature) else { return nil }
         let e = error as NSError
         let diagnostic = error is OptionError ? normalize("\(error)") : "\(e.domain) \(e.code)"
         return (diagnostic, "Disk creation failed: \(diagnostic)", ["error_detail": "\(error)"])
@@ -1061,8 +1064,11 @@ private struct LineScanner {
     /// virglrenderer (patch 0010): another thread of a context that went fatal stops
     /// ("<command> stopped: the context went fatal on another thread", "…submit_cmd: stopping,
     /// the context went fatal on another thread"); the thread that raised it logs its own line.
+    /// The two "early bail" paths likewise only test an already-fatal context/decoder
+    /// (vkr_context.c / vkr_ring.c), including normal probe/session teardown (STEAMAC-G).
     static func isBystander(_ line: String) -> Bool {
         line.contains("went fatal on another thread")
+            || line.contains("submit_cmd: early bail due to fatal decoder state")
     }
 
     /// STEAMAC-G 2026-10-05 16:09:54: the user skipped Steam's shader processing (fossilize_replay
@@ -1078,6 +1084,8 @@ private struct LineScanner {
         "vkr: resource 77 destroyed while the context replies into it (CS error)",
         "vkr: vkCreateGraphicsPipelines stopped: the context went fatal on another thread",
         "vkr: ring_submit_cmd: stopping, the context went fatal on another thread",
+        "vkr: submit_cmd: early bail due to fatal decoder state",
+        "vkr: ring_submit_cmd: early bail due to fatal decoder state",
     ].map(LineScanner.virglLine)
 
     /// Lines that stay reports (one each).
@@ -1406,8 +1414,11 @@ extension CrashReporting {
 private final class MemoryWatch: @unchecked Sendable {
     private let lock = NSLock()
     private var source: DispatchSourceMemoryPressure?
+    private var timer: DispatchSourceTimer?
     private var started = Date()
     private var events: [(at: Date, level: String, footprint: UInt64?)] = []
+    private var samples: [(at: Date, text: String)] = []
+    private var nextSample = 0
 
     func start() {
         guard source == nil else { return }
@@ -1418,6 +1429,11 @@ private final class MemoryWatch: @unchecked Sendable {
         }
         s.resume()
         source = s
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 10, repeating: 10, leeway: .seconds(1))
+        timer.setEventHandler { [weak self] in self?.sample() }
+        timer.resume()
+        self.timer = timer
     }
 
     /// A new VM process: the history starts with the current level.
@@ -1426,6 +1442,9 @@ private final class MemoryWatch: @unchecked Sendable {
         lock.withLock {
             started = Date()
             events = [(started, level, nil)]
+            samples.removeAll(keepingCapacity: true)
+            samples.reserveCapacity(12)
+            nextSample = 0
         }
     }
 
@@ -1439,13 +1458,43 @@ private final class MemoryWatch: @unchecked Sendable {
         log("memory pressure: \(level)" + (footprint.map { " (VM process footprint \(CrashReporting.gib($0)))" } ?? ""))
     }
 
+    /// Host state must be sampled before a kill: sampling only after waitpid sees memory
+    /// already reclaimed from the VM (STEAMAC-S). Keep two minutes without per-tick logging.
+    private func sample() {
+        let pid = Supervisor.vmPid
+        guard pid > 0, let footprint = VMExit.footprint(pid: pid) else { return }
+        let at = Date()
+        let host = CrashReporting.HostMemory.current()
+        let text = "VM footprint \(CrashReporting.gib(footprint.current)); " + host.summary
+        lock.withLock {
+            // A sample taken across a guest reboot must not enter the new VM's history.
+            guard at >= started, Supervisor.vmPid == pid else { return }
+            if samples.count < 12 { samples.append((at, text)) }
+            else { samples[nextSample] = (at, text) }
+            nextSample = (nextSample + 1) % 12
+        }
+    }
+
+    func recentSamples() -> String {
+        lock.withLock {
+            let now = Date()
+            var lines = ["Pre-exit samples (every 10 s; values at report time may already be reclaimed):"]
+            for offset in 0..<samples.count {
+                let s = samples[(samples.count == 12 ? nextSample + offset : offset) % 12]
+                lines.append("\(Int(now.timeIntervalSince(s.at))) s ago: \(s.text)")
+            }
+            if samples.isEmpty { lines.append("none (VM ran less than one sampling interval)") }
+            return lines.joined(separator: "\n")
+        }
+    }
+
     /// "normal at start; warning 5m12s ago (VM 14.2 GiB); critical 40s ago (VM 15.1 GiB)" and the
     /// highest level seen.
-    func summary() -> (text: String, maxLevel: String) {
+    func summary(including currentLevel: String) -> (text: String, maxLevel: String) {
         let rank = ["normal": 1, "warning": 2, "critical": 3]
         return lock.withLock {
             let now = Date()
-            var max = "unknown"
+            var max = currentLevel
             var parts: [String] = []
             for (i, e) in events.enumerated() {
                 if rank[e.level, default: 0] > rank[max, default: 0] { max = e.level }

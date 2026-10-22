@@ -390,6 +390,15 @@ one run):
   (`054c:0ce6` / `054c:09cc`, version `0x8111`, face buttons by position, digital L2/R2 besides the
   analog triggers). Steam's SDL maps it as a PS5 / PS4 controller and shows PlayStation glyphs.
 
+**Home / PS button diagnostics.** The launcher requests that macOS leave this button to SteamOS,
+but macOS can override that preference. If it works over USB but not Bluetooth, compare
+Settings → Controller's live **Home** indicator and send a report after pressing and releasing
+the button on each connection. The launcher log records whether GameController exposes Home,
+its system-gesture binding, button and profile callbacks, and whether the Home event was queued
+for the guest pad port; `pad state` includes the current Home state. This distinguishes host input
+handling from guest delivery without assuming that a Bluetooth failure is a DualSense passthrough
+problem (DualShock 4 uses the virtual pad).
+
 **Rumble.** The pad has `FF_RUMBLE`, like the real drivers, so SDL and Steam rumble it — games
 through Steam Input reach it via Steam's virtual Xbox pad. uinput leaves playback to its user-space
 driver: `fx-pad` implements the kernel's ff-memless rules (delay, length, repetitions, re-upload,
@@ -528,11 +537,17 @@ more than its ~4.4 GB of data: macOS keeps each chunk file's provenance attribut
 folder occupies whole clusters (128 KiB on a 2 TB drive), about 28 GB in all. The launcher checks this space before
 reconstructing the rootfs, and on exFAT deletes the chunk cache before allocating the disk when the volume would otherwise
 be too full (`--keep-cache` keeps it and needs room for both).
-These expected rejections (including an existing destination file, a busy download cache, a volume that fills up during
-creation, and downloads that still fail after desync's retries, which the next attempt resumes from the chunk cache) are
-logged, not sent as errors to Sentry. Unexpected creation failures still report: Foundation errors group by domain and code,
-a failed desync by its own `Error:` line (chunk ids left out),
-with the original technical diagnostic in the event details rather than pointers/task IDs in the title.
+Expected location failures (an existing destination, busy cache, read-only volume, missing write permission,
+full volume, disconnected drive, or filesystem I/O error) are logged with guidance, not sent as errors to Sentry,
+including failures after creation has started. Metadata/bundle connectivity failures (offline, DNS, timeout,
+connection loss, and system TLS rejection) follow the same policy as exhausted desync download retries.
+HTTPS certificate validation is never bypassed. Unexpected creation and bundle-signature failures still report,
+with the original technical diagnostic in event details.
+The launcher logs the target/cache filesystem type. A chunk-cache rename collision is retried once with a
+single worker and no cache. A rootfs hash mismatch is checked again with a sequential read to distinguish bad
+sparse-extent metadata from bad file bytes. If the bytes are bad, the temporary rootfs and chunk cache are
+deleted and downloaded again once, serially without a cache; both disk slots are cleared before retrying.
+A second integrity failure remains reportable; no disk is published without matching the signed manifest.
 
 If a download cannot reach Valve securely, the window explains that a VPN, proxy, or network filter
 may be interfering: try disabling it or using another network. Update checks give the same advice
@@ -576,14 +591,17 @@ This expected rejection is logged only; all other signature failures still repor
    and reports `provision done` — the launcher then removes the payload; subsequent boots do not
    use it.
 
-Space: ~14 GB on the disk volume during creation (~9 GB afterward), ~6 GB of cache (deleted after
-success unless `--keep-cache` is specified). Checks: `work/out/steamac-vm --selftest-provision` —
+Space on sparse-capable volumes: ~20 GB on the disk volume during creation (~9 GB afterward), plus ~6 GB of cache.
+desync preallocates the full 10 GiB temporary rootfs on macOS, even on APFS; only the two destination slots stay sparse.
+The preflight estimate includes this allocation and a safety margin (~27 GB total for SteamOS 20261007).
+The cache is deleted after success unless `--keep-cache` is specified.
+Checks: `work/out/steamac-vm --selftest-provision` —
 GPT against the Docker-built disk (`work/out/steamos.img` is opened read-only;
 `--reference-disk IMG`), CMS/squashfs against the `work/cache/rootfs` cache, cpio, SHA-512 crypt.
-The self-test also checks network messages, stable error fingerprints and log-only location
-rejections. To exercise an actual TLS failure without sending any events, point
-`STEAMAC_PROVISION_TEST_TLS_URL=https://localhost:PORT/` at a local server with an untrusted
-certificate when running `--selftest-provision`; it prints the message, title and fingerprint.
+The self-test also checks network messages, log-only network/filesystem failures, unexpected-error reporting,
+and sparse/sequential rootfs copying into both slots. To exercise an actual TLS failure without sending events,
+point `STEAMAC_PROVISION_TEST_TLS_URL=https://localhost:PORT/` at a local server with an untrusted
+certificate when running `--selftest-provision`; it prints the message and checks that no report is produced.
 
 ## Steam client
 
@@ -732,6 +750,11 @@ What is sent:
   and the `crash_site` tag (reports group by it), and in extra `macos_crash_report` the exception, the
   Application Specific Information lines (libmalloc's message on a heap corruption trap) and the
   crashed thread's first 16 frames (library and symbol names);
+  Not-responding reports include `stall_history`: up to 32 one-second GPU command-counter, heartbeat age,
+  guest uptime/load, process CPU-time and host polling-gap samples, even with performance statistics
+  off (STEAMAC-8). Missing agent heartbeats alone do not prove that the whole guest or GPU hung.
+  The same samples are logged once when an idle indicator lasts 10 s, including with a live
+  heartbeat, so Report a Problem can diagnose game stalls without enabling performance statistics.
 - VM exit due to SIGTERM/SIGINT/SIGHUP (logging out, `kill`, ^C before handlers are installed) is not
   a crash: only a log line, with no event and no Report a Problem window. Neither is SIGPIPE (both
   processes ignore it: a closed output pipe — the terminal, or the supervisor's stderr channel after
@@ -746,6 +769,8 @@ What is sent:
   second shutdown request) is a requested exit, not a report: the VM process exits with status 3, which
   the supervisor recognizes without the `user-exit` marker file (with the Mac's disk full the marker
   could not be written, STEAMAC-15);
+  `memory_history` adds up to two minutes of pre-exit VM footprint and host memory samples (every
+  10 s); the separate report-time snapshot is labelled post-exit because VM memory is already freed.
 - Every event includes the last ~200 lines of launcher stderr as breadcrumbs (`[steamac-vm]`,
   `[mvk-*]`, libkrun/virglrenderer warnings, startup stages) and tags: version
   (`es.fxgam.steamac@<CFBundleShortVersionString>+<git sha>`), environment, and `build_kind` tag:
@@ -827,7 +852,8 @@ what you expected, what happened), and checkboxes for attachments:
 - **Include SteamOS logs (system journal, Steam/Proton logs)** (enabled) — the guest console (hvc0) for
   the session and a `steamos-logs.tar.gz` archive collected by the guest agent: the systemd journal
   for the current boot (`journalctl -b`, the last 5000 lines, plus the user journal), `coredumpctl list`/`info`,
-  `dmesg`, `systemctl --failed`, `os-release`, `layer-release`, `/proc/cmdline`, `df`/`free`, tails of
+  `dmesg`, `systemctl --failed`, `os-release`, `layer-release`, `/proc/cmdline`, `df`/`free`,
+  thread IDs/states/CPU/wait channels and command names (`threads.txt`, no command arguments), tails of
   Steam client logs (`console_log`, `stderr`, `bootstrap_log`, `compat_log`, `connection_log`,
   `webhelper`, `cef_log`, `shader_log`, `steamui_*`, Steam Input's `controller`, `controller_ui` and
   `cloud_log`) and Proton logs (`~/steam-*.log` from `PROTON_LOG=1`,
