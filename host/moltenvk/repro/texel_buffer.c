@@ -25,6 +25,15 @@
  *    texel 2).
  *    KosmicKrisp only: a view of R16G16B16_UINT (no texel buffer features, invalid usage) is created and reads as a
  *    null descriptor.
+ *
+ * 5. MoltenVK only (STEAMAC-3Q/46/47): unsupported vkCreateBufferView formats must return
+ *    VK_ERROR_FORMAT_NOT_SUPPORTED with a null handle, not abort in Metal's
+ *    minimumLinearTextureAlignmentForPixelFormat (MTLPixelFormatInvalid), divide by zero,
+ *    or accept a depth/compressed/chroma format. Supported controls must still create views.
+ *    Run creation alone, without shaders or optional device features:
+ *      texel_buffer --format <case>
+ *    Cases: rgb32_uint, rgb32_sfloat, rgb32_sint, rgb16_uint, undefined, unknown,
+ *           depth, compressed, packed_ycbcr, multiplanar, r32_uint, r8_uint, rgba8_uint.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -154,9 +163,80 @@ static VkDescriptorSetLayout set_layout(const VkDescriptorSetLayoutBinding *b, u
 	return l;
 }
 
+static int format_case(const char *name)
+{
+	static const struct {
+		const char *name;
+		VkFormat format;
+		VkDeviceSize texel_size;
+	} cases[] = {
+		{ "rgb32_uint", VK_FORMAT_R32G32B32_UINT, 12 },
+		{ "rgb32_sfloat", VK_FORMAT_R32G32B32_SFLOAT, 12 },
+		{ "rgb32_sint", VK_FORMAT_R32G32B32_SINT, 12 },
+		{ "rgb16_uint", VK_FORMAT_R16G16B16_UINT, 6 },
+		{ "undefined", VK_FORMAT_UNDEFINED, 1 },
+		{ "unknown", (VkFormat)0x7ffffffe, 1 },
+		{ "depth", VK_FORMAT_D32_SFLOAT, 4 },
+		{ "compressed", VK_FORMAT_BC1_RGBA_UNORM_BLOCK, 8 },
+		{ "packed_ycbcr", VK_FORMAT_G8B8G8R8_422_UNORM, 4 },
+		{ "multiplanar", VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, 1 },
+		{ "r32_uint", VK_FORMAT_R32_UINT, 4 },
+		{ "r8_uint", VK_FORMAT_R8_UINT, 1 },
+		{ "rgba8_uint", VK_FORMAT_R8G8B8A8_UINT, 4 },
+	};
+	int found = 0;
+	for (uint32_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+		if (!name || !strcmp(name, cases[i].name)) found = 1;
+	if (!found) {
+		fprintf(stderr, "unknown format case: %s\n", name);
+		return 2;
+	}
+
+	VkBufferCreateInfo bci = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = 4096,
+		.usage = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT };
+	VkBuffer buf;
+	CK(vkCreateBuffer(dev, &bci, NULL, &buf));
+	VkMemoryRequirements mr;
+	vkGetBufferMemoryRequirements(dev, buf, &mr);
+	uint32_t t = 0;
+	while (!(mr.memoryTypeBits & (1u << t))) t++;
+	VkMemoryAllocateInfo mai = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = mr.size, .memoryTypeIndex = t };
+	VkDeviceMemory mem;
+	CK(vkAllocateMemory(dev, &mai, NULL, &mem));
+	CK(vkBindBufferMemory(dev, buf, mem, 0));
+	int bad = 0;
+	for (uint32_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		if (name && strcmp(name, cases[i].name)) continue;
+		VkFormatProperties props;
+		vkGetPhysicalDeviceFormatProperties(pd, cases[i].format, &props);
+		int supported = !!(props.bufferFeatures & VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT);
+		VkResult want = supported ? VK_SUCCESS : VK_ERROR_FORMAT_NOT_SUPPORTED;
+		VkBufferViewCreateInfo ci = { VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO, .buffer = buf,
+			.format = cases[i].format, .range = 4 * cases[i].texel_size };
+		VkBufferView v = VK_NULL_HANDLE;
+		/* Flush so an abort on the baseline identifies the exact format in redirected logs. */
+		printf("TEST format %s (%d), buffer features 0x%x, want %d\n",
+		       cases[i].name, cases[i].format, props.bufferFeatures, want);
+		fflush(stdout);
+		VkResult r = vkCreateBufferView(dev, &ci, NULL, &v);
+		int ok = r == want && (supported ? v != VK_NULL_HANDLE : v == VK_NULL_HANDLE);
+		printf("%-4s format %s: VkResult %d, handle %s\n",
+		       ok ? "OK" : "FAIL", cases[i].name, r, v ? "non-null" : "null");
+		bad += !ok;
+		if (r == VK_SUCCESS && v) vkDestroyBufferView(dev, v, NULL);
+	}
+	vkDestroyBuffer(dev, buf, NULL);
+	vkFreeMemory(dev, mem, NULL);
+	return bad != 0;
+}
+
 int main(int argc, char **argv)
 {
-	if (argc != 2) { fprintf(stderr, "usage: %s <spv dir>\n", argv[0]); return 2; }
+	const char *format = argc == 3 && !strcmp(argv[1], "--format") ? argv[2] : NULL;
+	if (argc != 2 && !format) {
+		fprintf(stderr, "usage: %s <spv dir> | --format <case>\n", argv[0]);
+		return 2;
+	}
 	dir = argv[1];
 	VkApplicationInfo app = { VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
 	VkInstanceCreateInfo ici = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
@@ -169,6 +249,23 @@ int main(int argc, char **argv)
 	VkPhysicalDeviceVulkan13Properties p13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES, &drv };
 	VkPhysicalDeviceProperties2 p2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &p13 };
 	vkGetPhysicalDeviceProperties2(pd, &p2);
+	if (format) {
+		if (drv.driverID != VK_DRIVER_ID_MOLTENVK) {
+			printf("SKIP unsupported-format rejection is a MoltenVK regression\n");
+			vkDestroyInstance(inst, NULL);
+			return 0;
+		}
+		float prio = 1;
+		VkDeviceQueueCreateInfo qci = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+			.queueCount = 1, .pQueuePriorities = &prio };
+		VkDeviceCreateInfo dci = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+			.queueCreateInfoCount = 1, .pQueueCreateInfos = &qci };
+		CK(vkCreateDevice(pd, &dci, NULL, &dev));
+		int result = format_case(format);
+		vkDestroyDevice(dev, NULL);
+		vkDestroyInstance(inst, NULL);
+		return result;
+	}
 	printf("%-4s single texel alignment: storage %u (%llu bytes), uniform %u (%llu bytes)\n",
 	       p13.storageTexelBufferOffsetSingleTexelAlignment && p13.uniformTexelBufferOffsetSingleTexelAlignment ? "OK" : "FAIL",
 	       p13.storageTexelBufferOffsetSingleTexelAlignment, (unsigned long long)p13.storageTexelBufferOffsetAlignmentBytes,
@@ -190,6 +287,7 @@ int main(int argc, char **argv)
 		.enabledExtensionCount = 2, .ppEnabledExtensionNames = exts };
 	CK(vkCreateDevice(pd, &dci, NULL, &dev));
 	vkGetDeviceQueue(dev, 0, 0, &queue);
+	if (drv.driverID == VK_DRIVER_ID_MOLTENVK) fails += format_case(NULL);
 	VkCommandPoolCreateInfo cpci = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 	CK(vkCreateCommandPool(dev, &cpci, NULL, &pool));
 
