@@ -248,7 +248,7 @@ export default {
       if (!isGet || request.method !== "GET") return json({ error: "Method not allowed" }, 405, { Allow: isGet ? "GET, OPTIONS" : "POST, OPTIONS" });
       // Do not serve cached responses from the earlier API that included individual sessions.
       const filters = hardwareFilters(url.searchParams);
-      const cacheParams = new URLSearchParams({ aggregates: "2", ...filters });
+      const cacheParams = new URLSearchParams({ aggregates: "3", ...filters });
       const cacheKey = new Request(`${url.origin}${path}?${cacheParams}`, { method: "GET" });
       const cached = await caches.default.match(cacheKey);
       if (cached) return cached;
