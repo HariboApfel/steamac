@@ -200,6 +200,9 @@ fn gather(dir: &Path, steam: &Path, home: &Path) -> Result<(), String> {
     out("uname.txt", &["uname", "-a"], 4096);
     out("df.txt", &["df", "-h"], 64 << 10);
     out("free.txt", &["free", "-m"], 4096);
+    // Game/compositor waits distinguish a live guest waiting for GPU fences from a CPU stall
+    // (STEAMAC-4F/3P). Command names only: never include arguments or environment variables.
+    out("threads.txt", &["ps", "-eLo", "pid,tid,stat,pcpu,wchan:32,comm"], 256 << 10);
     for (name, path) in [
         ("os-release.txt", "/etc/os-release"),
         ("layer-release.txt", "/usr/lib/steamac/layer-release"),
