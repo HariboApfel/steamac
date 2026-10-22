@@ -8,21 +8,18 @@ const API = "https://steamac-game-stats.steamac-game-stats.workers.dev";
   const words = {
     game: ["Game", "Игра", "游戏"], sessions: ["Sessions", "Сеансы", "会话"], installs: ["Installs", "Установки", "安装数"],
     launch_rate: ["Launch rate", "Запуски", "启动率"], fps_avg_median: ["Median FPS", "Медиана FPS", "FPS 中位数"],
-    fps_avg: ["Average FPS", "Средний FPS", "平均 FPS"],
+    chips: ["Tested on", "Проверено на", "已测试芯片"],
     play_hours: ["Play hours", "Часы игры", "游戏小时"], last_seen: ["Last seen", "Последний сеанс", "最近日期"],
     ratings: ["Player ratings", "Оценки игроков", "玩家评分"], well: ["Runs well", "Работает хорошо", "运行良好"],
     issues: ["Playable with issues", "Есть проблемы", "可玩但有问题"], unplayable: ["Unplayable", "Неиграбельно", "无法游玩"], no_start: ["Does not start", "Не запускается", "无法启动"],
     chip: ["Chip", "Чип", "芯片"], ram: ["RAM", "ОЗУ", "内存"], driver: ["Driver", "Драйвер", "驱动"],
     early: ["Early exit", "Ранний выход", "提前退出"], low1: ["1% low FPS", "1% low FPS", "1% 低帧率"],
     game_mem: ["Game MiB", "Игра МиБ", "游戏 MiB"], host_mem: ["VM process MiB", "Процесс ВМ МиБ", "虚拟机进程 MiB"],
-    date: ["Date (UTC)", "Дата (UTC)", "日期 (UTC)"], launched: ["Launched", "Запущена", "已启动"], end: ["End", "Завершение", "结束"],
-    run: ["Run / play (min)", "Сеанс / игра (мин)", "会话 / 游玩（分）"], res: ["Resolution", "Разрешение", "分辨率"],
     loading: ["Loading statistics…", "Загрузка статистики…", "正在加载统计…"], empty: ["No sessions or ratings have been shared yet.", "Сеансы и оценки пока не опубликованы.", "暂无分享的会话或评分。"],
     no_match: ["No games match your search.", "По вашему запросу игр нет.", "没有匹配的游戏。"],
     error: ["Could not load statistics. Please try again.", "Не удалось загрузить статистику. Попробуйте ещё раз.", "无法加载统计，请重试。"],
     missing: ["No reports for this game yet.", "Для этой игры пока нет данных.", "该游戏暂无报告。"], retry: ["Retry", "Повторить", "重试"],
     updated: ["Updated", "Обновлено", "更新时间"], yes: ["Yes", "Да", "是"], no: ["No", "Нет", "否"],
-    exit: ["Exit", "Выход", "退出"], shutdown: ["VM shutdown", "Выключение ВМ", "虚拟机关机"], session: ["Session ended", "Конец сессии", "会话结束"], replaced: ["Another game", "Другая игра", "切换游戏"],
   };
   const languages = ["en", "ru", "zh"];
   const ratingKeys = ["well", "issues", "unplayable", "no_start"];
@@ -72,6 +69,13 @@ const API = "https://steamac-game-stats.steamac-game-stats.workers.dev";
     wrap.append(bar, count);
     return wrap;
   }
+  function chipList(chips) {
+    const label = document.createElement("span");
+    label.textContent = chips.slice(0, 4).map((chip) => chip.replace(/^Apple /, "")).join(", ") || "—";
+    if (chips.length > 4) label.append(` +${chips.length - 4}`);
+    label.title = chips.join(", ");
+    return label;
+  }
   function status(id, key, retry) {
     const element = $(id);
     element.replaceChildren(translated(key)); element.hidden = false;
@@ -88,14 +92,14 @@ const API = "https://steamac-game-stats.steamac-game-stats.workers.dev";
     return response.json();
   }
   function renderList() {
-    headings("games-table", ["game", "sessions", "installs", "launch_rate", "fps_avg_median", "play_hours", "last_seen", "ratings"]);
+    headings("games-table", ["game", "chips", "sessions", "installs", "launch_rate", "fps_avg_median", "play_hours", "last_seen", "ratings"]);
     const body = $("games-table").querySelector("tbody"); body.replaceChildren();
     const query = $("search").value.trim().toLocaleLowerCase(root.lang), sort = $("sort").value;
-    const filtered = games.filter((game) => `${gameName(game)} ${game.appid}`.toLocaleLowerCase(root.lang).includes(query));
+    const filtered = games.filter((game) => `${gameName(game)} ${game.appid} ${game.chips.join(" ")}`.toLocaleLowerCase(root.lang).includes(query));
     filtered.sort((a, b) => sort === "game" ? gameName(a).localeCompare(gameName(b), root.lang) : sort === "last_seen" ? (b.last_seen || "").localeCompare(a.last_seen || "") : (b[sort] ?? -1) - (a[sort] ?? -1) || a.appid - b.appid);
     for (const game of filtered) {
       const link = document.createElement("a"); link.href = `#${game.appid}`; link.textContent = gameName(game);
-      row(body, [link, number(game.sessions), number(game.installs), percent(game.launch_rate), number(game.fps_avg_median, 1), number(game.play_hours, 1), game.last_seen || "—", ratingBar(game.ratings)]);
+      row(body, [link, chipList(game.chips), number(game.sessions), number(game.installs), percent(game.launch_rate), number(game.fps_avg_median, 1), number(game.play_hours, 1), game.last_seen || "—", ratingBar(game.ratings)]);
     }
     $("games-table").hidden = !filtered.length;
     if (filtered.length) $("list-status").hidden = true; else status("list-status", games.length ? "no_match" : "empty");
@@ -114,10 +118,6 @@ const API = "https://steamac-game-stats.steamac-game-stats.workers.dev";
     headings("configs-table", ["chip", "ram", "driver", "WMTR", "sessions", "installs", "launch_rate", "early", "fps_avg_median", "low1", "game_mem", "host_mem", "play_hours", "ratings"]);
     const configs = $("configs-table").querySelector("tbody"); configs.replaceChildren();
     for (const c of game.configs) row(configs, [c.chip, `${number(c.ram_gb)} GB`, c.driver, translated(c.wmtr ? "yes" : "no"), number(c.sessions), number(c.installs), percent(c.launch_rate), percent(c.early_exit_rate), number(c.fps_avg_median, 1), number(c.fps_low1_median, 1), number(c.game_mib_median), number(c.host_mib_median), number(c.play_hours, 1), ratingBar(c.ratings)]);
-    headings("recent-table", ["date", "chip", "ram", "driver", "WMTR", "launched", "end", "run", "fps_avg", "low1", "game_mem", "host_mem", "res", "Proton"]);
-    const recent = $("recent-table").querySelector("tbody"); recent.replaceChildren();
-    for (const s of game.recent) row(recent, [s.received, s.mac.chip, `${number(s.mac.ram_gb)} GB`, s.vm.driver, translated(s.vm.wmtr ? "yes" : "no"), translated(s.launched ? "yes" : "no"), translated(s.end), `${number(s.run_s / 60, 1)} / ${number(s.play_s / 60, 1)}`, number(s.fps?.avg, 1), number(s.fps?.low1, 1), number(s.mem?.game_mib), number(s.mem?.host_mib), s.res || "—", s.proton || "—"]);
-    $("recent-table").hidden = !game.recent.length; $("recent-empty").hidden = Boolean(game.recent.length);
     $("detail-status").hidden = true; $("detail-content").hidden = false;
   }
   async function route() {

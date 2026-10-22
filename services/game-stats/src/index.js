@@ -182,29 +182,29 @@ function mergeRatings(sessions, ratings, config = false) {
   }
   return [...rows.values()].map((row) => config ? { ...row, wmtr: Boolean(row.wmtr) } : row);
 }
-/** Recent payloads retain the submitted schema, but never disclose either identifier. */
-function publicSession(row) {
-  const out = { v: row.v, launcher: row.launcher, appid: row.appid, received: row.received,
-    launched: Boolean(row.launched), end: row.end, run_s: row.run_s, play_s: row.play_s, mac: {}, vm: {} };
-  for (const [key, value] of Object.entries(row)) {
-    if (value === null) continue;
-    if (key.startsWith("mac_")) out.mac[key.slice(4)] = value;
-    if (key.startsWith("vm_")) out.vm[key.slice(3)] = key === "vm_wmtr" ? Boolean(value) : value;
+/** Distinct tested chips include rating-only configurations, ranked by session sample size. */
+async function testedChips(db, appid) {
+  const where = appid === undefined ? "" : "WHERE appid = ?";
+  const rows = (await db.prepare(`SELECT appid, chip, sum(sessions) AS sessions FROM (
+    SELECT appid, mac_chip AS chip, count(*) AS sessions FROM sessions ${where} GROUP BY appid, mac_chip
+    UNION ALL
+    SELECT appid, mac_chip AS chip, 0 AS sessions FROM ratings ${where} GROUP BY appid, mac_chip
+  ) GROUP BY appid, chip ORDER BY appid, sessions DESC, chip`).bind(...(appid === undefined ? [] : [appid, appid])).all()).results;
+  const chips = new Map();
+  for (const row of rows) {
+    if (!chips.has(row.appid)) chips.set(row.appid, []);
+    chips.get(row.appid).push(row.chip);
   }
-  for (const key of ["game", "first_window_s", "proton", "res"]) if (row[key] !== null) out[key] = row[key];
-  for (const [prefix, names] of [["fps", ["avg", "p50", "low1", "hitches_per_min"]], ["mem", ["game_mib", "guest_mib", "host_mib"]]]) {
-    const values = Object.fromEntries(names.filter((name) => row[`${prefix}_${name}`] !== null).map((name) => [name, row[`${prefix}_${name}`]]));
-    if (Object.keys(values).length) out[prefix] = values;
-  }
-  return out;
+  return chips;
 }
 async function get(env, appid) {
   const games = mergeRatings(await summaries(env.DB, appid), await ratingRows(env.DB, appid));
+  const chips = await testedChips(env.DB, appid);
+  for (const game of games) game.chips = chips.get(game.appid) || [];
   if (appid === undefined) return { generated: new Date().toISOString(), games };
   if (!games.length) throw new HttpError(404, "Game not found");
   const configs = mergeRatings(await summaries(env.DB, appid, true), await ratingRows(env.DB, appid, true), true);
-  const recent = (await env.DB.prepare("SELECT * FROM sessions WHERE appid = ? ORDER BY id DESC LIMIT 50").bind(appid).all()).results.map(publicSession);
-  return { generated: new Date().toISOString(), ...games[0], configs, recent };
+  return { generated: new Date().toISOString(), ...games[0], configs };
 }
 export default {
   async fetch(request, env, ctx) {
@@ -217,7 +217,8 @@ export default {
       if (request.method === "OPTIONS") return json({ status: "ok" });
       if (isPost && request.method === "POST") return await post(request, env, path === "/v1/ratings");
       if (!isGet || request.method !== "GET") return json({ error: "Method not allowed" }, 405, { Allow: isGet ? "GET, OPTIONS" : "POST, OPTIONS" });
-      const cacheKey = new Request(`${url.origin}${path}`, { method: "GET" });
+      // Do not serve cached responses from the earlier API that included individual sessions.
+      const cacheKey = new Request(`${url.origin}${path}?aggregates=2`, { method: "GET" });
       const cached = await caches.default.match(cacheKey);
       if (cached) return cached;
       const response = json(await get(env, detail ? Number(detail[1]) : undefined), 200, { "Cache-Control": "public, max-age=300" });

@@ -96,7 +96,7 @@ it("upserts ratings per installation/game, clears them and validates reduced VM 
   expect((await request("/v1/ratings", { ...rating, rating: "none" })).status).toBe(200);
   expect(await env.DB.prepare("SELECT count(*) AS n FROM ratings").first("n")).toBe(0);
 });
-it("computes exact medians, launch and early-exit rates, config ratings and anonymous recent rows", async () => {
+it("computes exact medians, launch and early-exit rates and config ratings without exposing individual sessions", async () => {
   const install = crypto.randomUUID();
   for (const [index, fps] of [20, 40, 60, 80].entries()) {
     const b = sample({ install: index < 2 ? install : crypto.randomUUID(), launched: index !== 3, run_s: index === 0 ? 30 : 100, play_s: index === 0 ? 20 : 90, first_window_s: 1, fps: { avg: fps, p50: fps, low1: fps / 2, hitches_per_min: 0 } });
@@ -112,9 +112,10 @@ it("computes exact medians, launch and early-exit rates, config ratings and anon
   const response = await request("/v1/games/1091500"), game = await response.json();
   expect(game.configs.find((c) => c.chip === "Apple M3 Max")).toMatchObject({ early_exit_rate: 0.25, fps_avg_median: 50, fps_low1_median: 25, ratings: { well: 1 } });
   expect(game.configs.find((c) => c.chip === "Apple M4")).toMatchObject({ sessions: 0, ratings: { no_start: 1 } });
-  expect(game.recent).toHaveLength(5);
-  expect(game.recent[0]).not.toHaveProperty("sid"); expect(game.recent[0]).not.toHaveProperty("install");
-  expect(game.recent[0].mac.chip).toBe("Apple M3 Max");
+  expect(game).not.toHaveProperty("recent");
+  for (const field of ["sid", "install", "launcher", "mac", "vm", "run_s", "play_s", "first_window_s", "proton", "res", "fps", "mem"]) {
+    expect(game).not.toHaveProperty(field);
+  }
   expect(game.play_hours).toBeCloseTo(300 / 3600);
   expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
 });
@@ -128,7 +129,7 @@ it("supports rating-only games and JSON routing errors", async () => {
   expect(options.status).toBe(200); expect(options.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type");
 });
 
-it("accepts omitted optional metadata on sessions and ratings and omits unknown recent fields", async () => {
+it("accepts omitted optional metadata on sessions and ratings", async () => {
   const body = sample();
   delete body.game; delete body.mac.pcores; delete body.mac.gpu_cores; delete body.vm.steamos;
   expect((await request("/v1/sessions", body)).status).toBe(201);
@@ -140,10 +141,7 @@ it("accepts omitted optional metadata on sessions and ratings and omits unknown 
   const game = await (await request(`/v1/games/${body.appid}`)).json();
   expect(game).toMatchObject({ game: null, sessions: 1, ratings: { issues: 1 } });
   expect(game.configs[0]).toMatchObject({ game: null, sessions: 1, ratings: { issues: 1 } });
-  expect(game.recent[0]).not.toHaveProperty("game");
-  expect(game.recent[0].mac).not.toHaveProperty("pcores");
-  expect(game.recent[0].mac).not.toHaveProperty("gpu_cores");
-  expect(game.recent[0].vm).not.toHaveProperty("steamos");
+  expect(game).not.toHaveProperty("recent");
   const list = await (await request("/v1/games")).json();
   expect(list.games[0]).toMatchObject({ game: null, sessions: 1 });
 });
@@ -171,4 +169,35 @@ it.each(["game", "pcores", "gpu_cores", "steamos"])("rejects explicit null for o
   else body.mac[key] = null;
   expect((await request("/v1/sessions", body)).status).toBe(400);
   expect((await request("/v1/ratings", { ...body, rating: "well" })).status).toBe(400);
+});
+
+it("lists distinct chips from sessions and ratings by session count then chip name", async () => {
+  for (const chip of ["Apple M3 Pro", "Apple M3 Pro", "Apple M1 Max", "Apple M2 Max"]) {
+    const body = sample();
+    body.mac.chip = chip;
+    expect((await request("/v1/sessions", body)).status).toBe(201);
+  }
+  for (const chip of ["Apple M3 Pro", "Apple M4 Pro", "Apple M1"]) {
+    const body = { ...sample(), rating: "well" };
+    body.mac.chip = chip;
+    expect((await request("/v1/ratings", body)).status).toBe(200);
+  }
+  const ratingOnly = { ...sample({ appid: 620, game: "Portal 2" }), rating: "well" };
+  ratingOnly.mac.chip = "Apple M5";
+  expect((await request("/v1/ratings", ratingOnly)).status).toBe(200);
+  const list = await (await request("/v1/games")).json();
+  const expected = ["Apple M3 Pro", "Apple M1 Max", "Apple M2 Max", "Apple M1", "Apple M4 Pro"];
+  expect(list.games.find((game) => game.appid === 1091500).chips).toEqual(expected);
+  expect(list.games.find((game) => game.appid === 620).chips).toEqual(["Apple M5"]);
+  const detail = await (await request("/v1/games/1091500")).json();
+  expect(detail.chips).toEqual(expected);
+  expect(detail).not.toHaveProperty("recent");
+});
+it("does not serve cached individual-session responses from the old API", async () => {
+  expect((await request("/v1/sessions", sample())).status).toBe(201);
+  await caches.default.put(new Request(`https://case${host}.example/v1/games/1091500`),
+    Response.json({ recent: [{ sid: "old private session" }] }, { headers: { "Cache-Control": "public, max-age=300" } }));
+  const game = await (await request("/v1/games/1091500")).json();
+  expect(game).not.toHaveProperty("recent");
+  expect(game.sessions).toBe(1);
 });
