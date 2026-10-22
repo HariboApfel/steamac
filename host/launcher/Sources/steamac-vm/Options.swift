@@ -65,6 +65,9 @@ struct Options {
     var macTime = true
     /// Host Vulkan driver of this boot (virglrenderer opens it; VM.start).
     var vulkanDriver = LauncherSettings.VulkanDriver.moltenvk
+    /// Experimental wmtr context type: its executor library (STEAMAC_WMTR_LIB, set by VM.start
+    /// with STEAMAC_WMTR=1); nil = off.
+    var wmtrLibrary: String?
     var shmMiB = 8192
     var gpuFlags: UInt32? = nil
     var gvproxyPath: String?
@@ -123,6 +126,7 @@ struct Options {
                       [--krun-log-level 0-5] [--perf-stats]
                       [--no-crash-reports] [--steam-client frame|deck|deckbeta]
                       [--vulkan-driver moltenvk|kosmickrisp] [--lan-remote-play | --no-lan-remote-play]
+                      [--wmtr-lib PATH | --no-wmtr]
            steamac-vm --selftest-display [--headless] [--selftest-out DIR] [--display WxH]
            steamac-vm --selftest-overlay [--selftest-out DIR] [--display WxH]
            steamac-vm --selftest-stall [--selftest-out DIR] [--display WxH]
@@ -211,6 +215,10 @@ struct Options {
                            include it: host/kosmickrisp);
                            moltenvk: MoltenVK with steamac's patches (every Mac).
                            Switching makes Steam and games rebuild their shader caches.
+      --wmtr-lib PATH      experimental: offer the guest the wmtr virtio-gpu context type (capset 30), DXMT's
+                           winemetal calls run on this Mac's Metal by the executor library PATH
+                           (default: Settings > Advanced "D3D11 on the Mac's Metal (wmtr)", off unless changed)
+      --no-wmtr            the guest gets no wmtr context type for this run
 
     Creating a SteamOS disk (no Docker; the same code as Settings > Advanced "Create New Disk…"):
       --create-disk PATH   download the signed SteamOS bundle of the branch (default: the saved setting,
@@ -353,6 +361,8 @@ struct Options {
                     throw OptionError("--vulkan-driver: moltenvk or kosmickrisp")
                 }
                 o.vulkanDriver = d
+            case "--wmtr-lib": o.wmtrLibrary = try value(a)
+            case "--no-wmtr": o.wmtrLibrary = nil
             case "--shm-mib": o.shmMiB = try int(a)
             case "--gpu-flags":
                 let v = try value(a)
@@ -454,6 +464,11 @@ struct Options {
             log("gpu: \(o.vulkanDriver.name) \(reason); using MoltenVK")
             o.vulkanDriver = .moltenvk
         }
+        if !o.isSelftest, let lib = o.wmtrLibrary, let reason = LauncherSettings.Wmtr.unavailableReason(lib) {
+            guard !o.explicit.contains("--wmtr-lib") else { throw OptionError("--wmtr-lib: \(reason)") }
+            log("gpu: wmtr: \(reason); the guest gets no wmtr context type")
+            o.wmtrLibrary = nil
+        }
         if !o.isSelftest {
             AppBundle.fill(&o, settings: settings, overrides: &overrides)
             Provision.attachPending(&o)
@@ -519,6 +534,13 @@ struct Options {
         macTime = s.followMacTime
         if given("--steam-client") { ov[.steamClient] = "--steam-client \(steamClient.rawValue)" } else { steamClient = s.steamClient }
         if given("--vulkan-driver") { ov[.vulkanDriver] = "--vulkan-driver \(vulkanDriver.rawValue)" } else { vulkanDriver = s.vulkanDriver }
+        if given("--wmtr-lib") || given("--no-wmtr") {
+            let flag = wmtrLibrary.map { "--wmtr-lib \($0)" } ?? "--no-wmtr"
+            ov[.wmtr] = flag
+            ov[.wmtrLibrary] = flag
+        } else {
+            wmtrLibrary = s.wmtr ? LauncherSettings.Wmtr.path(for: s.wmtrLibrary) : nil
+        }
         if given("--no-sound") { ov[.soundEnabled] = "--no-sound" } else { sound = s.soundEnabled }
         if given("--no-gamepad") { ov[.virtualPad] = "--no-gamepad" }
         if let padType { ov[.padType] = "--pad \(padType.rawValue)" }

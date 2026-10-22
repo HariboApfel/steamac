@@ -228,7 +228,7 @@ over saved values, but only for that launch: the field displays “overridden by
 | Mouse | auto-capture in games; game list (name from `appmanifest_<appid>.acf`, Default/Auto/Off, remove) | — |
 | Controller | which physical controller (GameController) drives the virtual pad (first connected or selected), whether SteamOS gets a pad and what it appears as (`--no-gamepad`, `--pad`, see “Controller”), whether a DualSense is passed through as itself, whether further controllers are players 2–4, swap A/B and X/Y, stick dead zone, live input test | — |
 | Sound | output device (System default follows macOS, or a specific CoreAudio device), volume/mute, Low/Normal/Safe buffer — via `krun_snd_set_*` (looked up with `dlsym`; with an older libkrun the fields are disabled with an explanation) | sound (`--no-sound`) |
-| Advanced | — | vCPU (`--cpus`), RAM (`--mem`), SSH enable/disable + port (`--ssh-port`, `--no-ssh`) and generated password, network (`--no-net`), disk image (`--disk`), Create New Disk…, Steam client (`--steam-client`, see “Steam client”), Vulkan driver (`--vulkan-driver`, see “Vulkan driver”) |
+| Advanced | — | vCPU (`--cpus`), RAM (`--mem`), SSH enable/disable + port (`--ssh-port`, `--no-ssh`) and generated password, network (`--no-net`), disk image (`--disk`), Create New Disk…, Steam client (`--steam-client`, see “Steam client”), Vulkan driver (`--vulkan-driver`, see “Vulkan driver”), D3D11 on the Mac's Metal (wmtr), experimental (`--wmtr-lib`, `--no-wmtr`, see “Vulkan driver”) |
 
 **VM RAM and graphics share the Mac's memory.** Automatic VM RAM is half of physical RAM
 (4–16 GiB). On every boot the launcher also reserves at least 3 GiB, or a quarter of host RAM,
@@ -659,6 +659,19 @@ verifies actual Metal source compilation with the replacement (no VM or Sentry e
 Switching changes the Venus driver identity (pipeline cache UUID), so Steam and games rebuild their
 shader caches. A pipeline the host driver cannot build is a placeholder in virglrenderer: its draws
 and dispatches are dropped, the driver never sees `VK_NULL_HANDLE`.
+
+**D3D11 on the Mac's Metal (wmtr), experimental.** Settings → Advanced → **D3D11 on the Mac's Metal
+(wmtr)** (off by default, applies on next start; for one launch `--wmtr-lib PATH` or `--no-wmtr`)
+offers the guest libkrun's wmtr virtio-gpu context type (libkrun patch 0018, capset 30): DXMT's
+winemetal calls run on the Mac's Metal in an executor library inside the VM process instead of in
+the guest. The launcher sets `STEAMAC_WMTR=1` and `STEAMAC_WMTR_LIB` (the library chosen under
+**Executor library**, else `@rpath/libwmtr_host.dylib` from the app's Frameworks or
+`work/out/host/lib`) before the VM starts, and clears both while the setting is off. A library that
+does not load or exports no `wmtr_host_abi_version` turns the context type off for that boot
+(logged and shown in red in Settings; `--wmtr-lib` exits with the reason); libkrun refuses a
+library with another ABI version. Neither an executor nor a guest DXMT that uses it ships yet, so
+the setting is for testing them; a fault in the executor stops the VM. Problem and crash reports
+carry `wmtr on|off`.
 
 Every host-visible guest allocation is a POSIX shm whose file descriptors stay open in the VM
 process (about four per mapped allocation), and a Finder launch starts with a soft limit of 256

@@ -215,13 +215,30 @@ private struct Label2: View {
     var detail: String? = nil
     let now: Bool
     var key: LauncherSettings.Key? = nil
+    /// Unfinished feature: an "Experimental" badge next to the title.
+    var experimental = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
+            HStack(spacing: 6) {
+                Text(title)
+                if experimental { ExperimentalBadge() }
+            }
             if let detail { Text(verbatim: detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             Applies(now: now, key: key)
         }
+    }
+}
+
+/// Marks a setting whose feature is not finished (may not work, may stop the VM).
+private struct ExperimentalBadge: View {
+    var body: some View {
+        Text("Experimental", comment: "Badge next to a setting whose feature is not finished")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(Color.orange.opacity(0.7)))
     }
 }
 
@@ -885,6 +902,16 @@ private struct AdvancedTab: View {
         return (String(localized: "Default: none found"), false)
     }
 
+    /// The executor library the next start offers (bundled unless chosen) and whether it loads.
+    private var wmtrStatus: (String, Bool) {
+        let path = LauncherSettings.Wmtr.path(for: settings.wmtrLibrary)
+        let shown = settings.wmtrLibrary.isEmpty
+            ? String(localized: "Bundled: \(LauncherSettings.Wmtr.bundledLibrary)")
+            : (settings.wmtrLibrary as NSString).abbreviatingWithTildeInPath
+        guard let reason = LauncherSettings.Wmtr.localizedUnavailableReason(path) else { return (shown, true) }
+        return (String(localized: "\(shown): \(reason); SteamOS gets no wmtr channel."), false)
+    }
+
     var body: some View {
         Form {
             Section {
@@ -1035,6 +1062,29 @@ private struct AdvancedTab: View {
                 }
             }
             Section {
+                Toggle(isOn: $settings.wmtr) {
+                    Label2(title: "D3D11 on the Mac's Metal (wmtr)",
+                           detail: String(localized: "Offers SteamOS the wmtr GPU channel, through which DXMT can run a D3D11 game's Metal calls on the Mac instead of in the VM. Needs an executor library on the Mac and a DXMT build in SteamOS that uses it; neither ships with the launcher yet. The library runs inside the VM process: a fault in it stops the VM."),
+                           now: false, key: .wmtr, experimental: true)
+                }
+                if settings.wmtr {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label2(title: "Executor library", now: false, key: .wmtrLibrary)
+                        HStack {
+                            Text(verbatim: wmtrStatus.0)
+                                .font(.callout).foregroundStyle(wmtrStatus.1 ? Color.secondary : Color.red)
+                                .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                            Spacer()
+                        }
+                        HStack {
+                            Spacer()
+                            Button("Choose Library…") { chooseWmtrLibrary() }
+                            Button("Use Bundled") { settings.wmtrLibrary = "" }.disabled(settings.wmtrLibrary.isEmpty)
+                        }
+                    }
+                }
+            }
+            Section {
                 HStack {
                     Spacer()
                     Button("Reset All Settings…", role: .destructive) { confirmReset = true }
@@ -1098,6 +1148,18 @@ private struct AdvancedTab: View {
             panel.directoryURL = URL(fileURLWithPath: (settings.diskImage as NSString).deletingLastPathComponent)
         }
         if panel.runModal() == .OK, let url = panel.url { settings.diskImage = url.path }
+    }
+
+    private func chooseWmtrLibrary() {
+        let panel = NSOpenPanel()
+        panel.title = String(localized: "Choose a wmtr executor library")
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if !settings.wmtrLibrary.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: (settings.wmtrLibrary as NSString).deletingLastPathComponent)
+        }
+        if panel.runModal() == .OK, let url = panel.url { settings.wmtrLibrary = url.path }
     }
 }
 

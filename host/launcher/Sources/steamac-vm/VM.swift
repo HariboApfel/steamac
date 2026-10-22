@@ -102,6 +102,16 @@ final class VM {
         setenv("VKR_GPU_BUDGET_MIB", String(o.gpuBudgetMiB), 1)
         OverlayView.vulkanDriver = o.vulkanDriver
         log("gpu: Venus → \(o.vulkanDriver.name), \(o.gpuBudgetMiB) MiB advertised memory budget")
+        // Experimental wmtr context type (libkrun 0018): libkrun reads these when it builds the GPU.
+        // The setting (or --wmtr-lib / --no-wmtr) decides, not an inherited environment.
+        if let lib = o.wmtrLibrary {
+            setenv("STEAMAC_WMTR", "1", 1)
+            setenv("STEAMAC_WMTR_LIB", lib, 1)
+            log("gpu: wmtr context type offered (experimental), executor \(lib)")
+        } else {
+            unsetenv("STEAMAC_WMTR")
+            unsetenv("STEAMAC_WMTR_LIB")
+        }
         let flags = o.gpuFlags ?? (STEAMAC_VIRGL_VENUS | STEAMAC_VIRGL_NO_VIRGL)
         try krun("krun_set_gpu_options2", krun_set_gpu_options2(ctx, flags, UInt64(o.shmMiB) << 20))
         let (gw, gh) = o.guestSize

@@ -324,6 +324,28 @@
         }
       }
     },
+    "%@: %@; SteamOS gets no wmtr channel." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@; SteamOS gets no wmtr channel."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@; SteamOS не получит канал wmtr."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@：%2$@；SteamOS 不会获得 wmtr 通道。"
+          }
+        }
+      }
+    },
     "%@: not a SteamOS disk with home as its last partition" : {
       "localizations" : {
         "ru" : {
@@ -762,6 +784,22 @@
         }
       }
     },
+    "Bundled: %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Встроенная: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内置：%@"
+          }
+        }
+      }
+    },
     "Button glyphs and layout in Steam. Automatic: the same kind as the controller that drives it (DualSense, DualShock 4, else Xbox 360). Buttons, sticks, triggers and rumble (no touchpad, gyro or lightbar unless a DualSense is passed through)." : {
       "localizations" : {
         "ru" : {
@@ -1002,6 +1040,22 @@
         }
       }
     },
+    "Choose Library…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбрать библиотеку…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择库…"
+          }
+        }
+      }
+    },
     "Choose a SteamOS disk image" : {
       "localizations" : {
         "ru" : {
@@ -1014,6 +1068,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择 SteamOS 磁盘映像"
+          }
+        }
+      }
+    },
+    "Choose a wmtr executor library" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберите библиотеку-исполнитель wmtr"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 wmtr 执行器库"
           }
         }
       }
@@ -1452,6 +1522,22 @@
         }
       }
     },
+    "D3D11 on the Mac's Metal (wmtr)" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D3D11 на Metal этого Mac (wmtr)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Mac 的 Metal 上运行 D3D11（wmtr）"
+          }
+        }
+      }
+    },
     "DPI: %lld" : {
       "localizations" : {
         "ru" : {
@@ -1865,6 +1951,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每 5 秒记录：客户机刷新和屏幕显示的帧间隔、延迟、丢帧。"
+          }
+        }
+      }
+    },
+    "Executor library" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Библиотека-исполнитель"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "执行器库"
+          }
+        }
+      }
+    },
+    "Experimental" : {
+      "comment" : "Badge next to a setting whose feature is not finished",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Экспериментально"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实验性"
           }
         }
       }
@@ -3416,6 +3535,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭：客户机保持分辨率，画面缩放到窗口。"
+          }
+        }
+      }
+    },
+    "Offers SteamOS the wmtr GPU channel, through which DXMT can run a D3D11 game's Metal calls on the Mac instead of in the VM. Needs an executor library on the Mac and a DXMT build in SteamOS that uses it; neither ships with the launcher yet. The library runs inside the VM process: a fault in it stops the VM." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Даёт SteamOS GPU-канал wmtr, через который DXMT может выполнять вызовы Metal игры на D3D11 на самом Mac, а не в ВМ. Нужны библиотека-исполнитель на Mac и сборка DXMT в SteamOS, которая её использует; ни то ни другое пока не входит в лаунчер. Библиотека работает внутри процесса ВМ: сбой в ней останавливает ВМ."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为 SteamOS 提供 wmtr GPU 通道，DXMT 可借此在 Mac 上而不是在虚拟机内执行 D3D11 游戏的 Metal 调用。需要 Mac 上的执行器库以及 SteamOS 中使用它的 DXMT 构建；两者目前都不随启动器提供。该库在虚拟机进程内运行：其中的故障会使虚拟机停止。"
           }
         }
       }
@@ -6047,6 +6182,22 @@
         }
       }
     },
+    "Use Bundled" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Встроенная"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用内置"
+          }
+        }
+      }
+    },
     "Use Default" : {
       "localizations" : {
         "ru" : {
@@ -6723,6 +6874,22 @@
         }
       }
     },
+    "cannot be loaded" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не загружается"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载"
+          }
+        }
+      }
+    },
     "click to capture the mouse" : {
       "localizations" : {
         "ru" : {
@@ -7023,6 +7190,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不是 SteamOS 磁盘"
+          }
+        }
+      }
+    },
+    "not a wmtr executor library" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не библиотека-исполнитель wmtr"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不是 wmtr 执行器库"
           }
         }
       }

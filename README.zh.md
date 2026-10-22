@@ -196,7 +196,7 @@ Mac 版 Steam 自身的 UDP 27036 广播不会回灌客户机。
 | 鼠标 | 游戏中自动捕获；游戏列表（名取自 `appmanifest_<appid>.acf`，使用默认/自动/关闭、忘记此游戏） | — |
 | 控制器 | 哪个物理控制器（GameController）驱动虚拟手柄（首个已连接或自选），SteamOS 是否获得手柄及呈现为何种（`--no-gamepad`、`--pad`，见“控制器”），DualSense 是否按本身直通，其余控制器是否成为玩家 2–4，A/B 与 X/Y 互换，摇杆死区，实时输入测试 | — |
 | 声音 | 输出设备（系统默认跟随 macOS，或指定 CoreAudio 设备），音量/静音，低（10 毫秒）/普通（20 毫秒）/稳定（60 毫秒）缓冲——经 `krun_snd_set_*`（`dlsym` 查找；旧 libkrun 下字段置灰并说明） | 声音（`--no-sound`） |
-| 高级 | — | vCPU（`--cpus`）、内存（`--mem`）、SSH 开关 + 端口（`--ssh-port`、`--no-ssh`）与生成密码、网络（`--no-net`）、磁盘映像（`--disk`）、新建磁盘…、Steam 客户端（`--steam-client`，见“Steam 客户端”）、Vulkan 驱动（`--vulkan-driver`，见“Vulkan 驱动”） |
+| 高级 | — | vCPU（`--cpus`）、内存（`--mem`）、SSH 开关 + 端口（`--ssh-port`、`--no-ssh`）与生成密码、网络（`--no-net`）、磁盘映像（`--disk`）、新建磁盘…、Steam 客户端（`--steam-client`，见“Steam 客户端”）、Vulkan 驱动（`--vulkan-driver`，见“Vulkan 驱动”）、在 Mac 的 Metal 上运行 D3D11（wmtr），实验性（`--wmtr-lib`、`--no-wmtr`，见“Vulkan 驱动”） |
 
 **虚拟机内存与图形共享 Mac 的内存。** 自动分配的虚拟机内存为物理内存的一半（4–16 GiB）。
 每次启动还会为 macOS、其他应用和驱动开销预留至少 3 GiB 或宿主内存的四分之一，
@@ -469,6 +469,8 @@ Metal 初始化前，启动器检查运行时编译器的模块缓存是否可�
 | **MoltenVK** — Metal 3 · macOS 15+（`moltenvk`） | `host/moltenvk/`：UTM 分支 + steamac 补丁 | 所有受支持 Mac；macOS 15 默认，无 KosmicKrisp 的构建也默认（macOS 15 源码构建；1.7 起发布 DMG 含 KosmicKrisp） |
 
 切换改变 Venus 驱动身份（管线缓存 UUID），Steam 与游戏重建着色器缓存。宿主驱动建不出的管线在 virglrenderer 中是占位：其绘制与派发被丢弃，驱动永远见不到 `VK_NULL_HANDLE`。
+
+**在 Mac 的 Metal 上运行 D3D11（wmtr），实验性。** 设置 → 高级 → **在 Mac 的 Metal 上运行 D3D11（wmtr）**（默认关闭，下次启动生效；单次启动用 `--wmtr-lib PATH` 或 `--no-wmtr`）为客户机提供 libkrun 的 wmtr virtio-gpu 上下文类型（libkrun 补丁 0018，capset 30）：DXMT 的 winemetal 调用由虚拟机进程内的执行器库在 Mac 的 Metal 上执行，而不是在客户机内。虚拟机启动前，启动器设置 `STEAMAC_WMTR=1` 与 `STEAMAC_WMTR_LIB`（**执行器库**中选择的库，否则为应用 Frameworks 或 `work/out/host/lib` 中的 `@rpath/libwmtr_host.dylib`），设置关闭时清除两者。库无法加载或未导出 `wmtr_host_abi_version` 时，本次启动不提供该上下文类型（记入日志并在设置中以红色显示；使用 `--wmtr-lib` 时启动器带原因退出）；ABI 版本不同的库由 libkrun 拒绝。执行器与使用它的客户机 DXMT 目前都不随附，此设置用于测试它们；执行器中的故障会使虚拟机停止。问题报告与崩溃报告带 `wmtr on|off`。
 
 每个宿主可见客户机分配都是一块 POSIX shm，其文件描述符在虚拟机进程中保持打开（每映射分配约四个），访达启动的进程软限制 256 个描述符：几十个此类分配后游戏丢失 GPU 上下文（STEAMAC-G、Left 4 Dead
 2）。虚拟机进程启动时把软限制提到 `kern.maxfilesperproc`（记为“file

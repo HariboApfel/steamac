@@ -32,14 +32,15 @@ final class LauncherSettings: ObservableObject {
         // Sound
         case soundEnabled, soundOutputUID, soundVolume, soundMute, soundLatency
         // Advanced
-        case cpus, memMiB, sshEnabled, sshPort, network, lanRemotePlay, diskImage, steamosBranch, steamClient, vulkanDriver
+        case cpus, memMiB, sshEnabled, sshPort, network, lanRemotePlay, diskImage, steamosBranch, steamClient, vulkanDriver,
+             wmtr, wmtrLibrary
 
         var nextStart: Bool {
             switch self {
             case .openFullscreen, .dpiSource, .fixedDPI, .fixedWidthMM, .fixedHeightMM, .refreshRate,
                  .windowWidth, .windowHeight, .windowSizePreset, .retinaResolution, .soundEnabled, .cpus, .memMiB, .sshEnabled,
                  .sshPort, .network, .lanRemotePlay,
-                 .diskImage, .steamClient, .followMacTime, .vulkanDriver:
+                 .diskImage, .steamClient, .followMacTime, .vulkanDriver, .wmtr, .wmtrLibrary:
                 return true
             default:
                 return false
@@ -203,6 +204,48 @@ final class LauncherSettings: ObservableObject {
         }
     }
 
+    /// Experimental: the wmtr virtio-gpu context type (libkrun patch 0018, capset 30), which runs
+    /// DXMT's winemetal calls on the Mac's Metal through a host executor library. libkrun offers it
+    /// only with STEAMAC_WMTR=1 and a loadable STEAMAC_WMTR_LIB (set by VM.start); the library
+    /// checks its own ABI version against libkrun's.
+    enum Wmtr {
+        /// Library name in the app's Frameworks (work/out/host/lib for the dev launcher).
+        static let bundledLibrary = "libwmtr_host.dylib"
+
+        /// STEAMAC_WMTR_LIB for a `wmtrLibrary` setting ("" = the bundled library).
+        static func path(for setting: String) -> String {
+            setting.isEmpty ? "@rpath/" + bundledLibrary : setting
+        }
+
+        private enum Problem {
+            case missing, notExecutor
+        }
+
+        private static func problem(_ path: String) -> Problem? {
+            guard let handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL) else { return .missing }
+            defer { dlclose(handle) }
+            return dlsym(handle, "wmtr_host_abi_version") == nil ? .notExecutor : nil
+        }
+
+        /// English diagnostic for logs and command-line errors (nil = the library loads).
+        static func unavailableReason(_ path: String) -> String? {
+            switch problem(path) {
+            case .missing: return "cannot load \(path)"
+            case .notExecutor: return "\(path) is not a wmtr executor (no wmtr_host_abi_version)"
+            case nil: return nil
+            }
+        }
+
+        /// Settings > Advanced, shown after the library path.
+        static func localizedUnavailableReason(_ path: String) -> String? {
+            switch problem(path) {
+            case .missing: return String(localized: "cannot be loaded")
+            case .notExecutor: return String(localized: "not a wmtr executor library")
+            case nil: return nil
+            }
+        }
+    }
+
     /// Default window size choices (window points = guest pixels).
     struct SizePreset: Identifiable {
         let width: Int, height: Int, label: String
@@ -331,6 +374,10 @@ final class LauncherSettings: ObservableObject {
     @Published var steamClient = SteamClient.deck { didSet { save(.steamClient, steamClient.rawValue) } }
     /// Host Vulkan driver of the next start (VulkanDriver).
     @Published var vulkanDriver = VulkanDriver.preferred { didSet { save(.vulkanDriver, vulkanDriver.rawValue) } }
+    /// Experimental wmtr context type (Wmtr) on the next start, and its executor library
+    /// ("" = the bundled libwmtr_host.dylib).
+    @Published var wmtr = false { didSet { save(.wmtr, wmtr) } }
+    @Published var wmtrLibrary = "" { didSet { save(.wmtrLibrary, wmtrLibrary) } }
 
     init() {
         let domain = LauncherSettings.domain
@@ -412,6 +459,8 @@ final class LauncherSettings: ObservableObject {
         }
         if let s = d.string(forKey: Key.steamClient.rawValue).flatMap(SteamClient.init(rawValue:)) { steamClient = s }
         if let v = d.string(forKey: Key.vulkanDriver.rawValue).flatMap(VulkanDriver.init(rawValue:)) { vulkanDriver = v }
+        bool(.wmtr, &wmtr)
+        string(.wmtrLibrary, &wmtrLibrary)
         reloadGames()
     }
 
@@ -485,6 +534,8 @@ final class LauncherSettings: ObservableObject {
         case .steamosBranch: guard DiskCreator.branches.contains(text) else { return false }; steamosBranch = text
         case .steamClient: guard let v = SteamClient(rawValue: text) else { return false }; steamClient = v
         case .vulkanDriver: guard let v = VulkanDriver(rawValue: text) else { return false }; vulkanDriver = v
+        case .wmtr: guard let b else { return false }; wmtr = b
+        case .wmtrLibrary: wmtrLibrary = text == "default" ? "" : text
         }
         return true
     }
@@ -515,7 +566,7 @@ final class LauncherSettings: ObservableObject {
         cpus = fresh.cpus; memMiB = fresh.memMiB; sshEnabled = fresh.sshEnabled; sshPort = fresh.sshPort; network = fresh.network
         lanRemotePlay = fresh.lanRemotePlay
         diskImage = fresh.diskImage; steamosBranch = fresh.steamosBranch; steamClient = fresh.steamClient
-        vulkanDriver = fresh.vulkanDriver
+        vulkanDriver = fresh.vulkanDriver; wmtr = fresh.wmtr; wmtrLibrary = fresh.wmtrLibrary
         loading = false
         reloadGames()
         log("settings: reset to defaults")
@@ -549,7 +600,7 @@ final class LauncherSettings: ObservableObject {
             .soundEnabled: soundEnabled, .cpus: cpus, .memMiB: memMiB, .sshEnabled: sshEnabled, .sshPort: sshPort,
             .network: network, .lanRemotePlay: lanRemotePlay,
             .diskImage: diskImage, .steamClient: steamClient.rawValue, .followMacTime: followMacTime,
-            .vulkanDriver: vulkanDriver.rawValue,
+            .vulkanDriver: vulkanDriver.rawValue, .wmtr: wmtr, .wmtrLibrary: wmtrLibrary,
         ]
         var s: [Key: String] = [:]
         for (k, v) in values where k.nextStart && overrides[k] == nil { s[k] = "\(v)" }
