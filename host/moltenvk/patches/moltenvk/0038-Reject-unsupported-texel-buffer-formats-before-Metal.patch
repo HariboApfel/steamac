@@ -10,6 +10,9 @@ pixel representation (and advertise no texel-buffer format features).
 Reject unsupported buffer-view formats with VK_ERROR_FORMAT_NOT_SUPPORTED
 before alignment queries or texel arithmetic. The existing Vulkan entry point
 clears the returned handle and destroys the failed view.
+Check advertised texel-buffer capabilities before converting the format: the
+conversion error path appends a format name, which is null for unknown enums.
+Report rejected formats numerically so unknown values also fail cleanly.
 
 The alignment helper also serves image construction. Return the existing
 fallback alignment without querying Metal for unsupported or non-linear
@@ -24,19 +27,27 @@ The ordinary texel-buffer repro also runs all format-creation cases.
 diff --git a/MoltenVK/MoltenVK/GPUObjects/MVKBuffer.mm b/MoltenVK/MoltenVK/GPUObjects/MVKBuffer.mm
 --- a/MoltenVK/MoltenVK/GPUObjects/MVKBuffer.mm
 +++ b/MoltenVK/MoltenVK/GPUObjects/MVKBuffer.mm
-@@ -309,6 +309,17 @@
+@@ -304,11 +304,24 @@
+ 	MVKPixelFormats* pixFmts = getPixelFormats();
+     _buffer = (MVKBuffer*)pCreateInfo->buffer;
+     _offset = pCreateInfo->offset;
+-    _mtlPixelFormat = pixFmts->getMTLPixelFormat(pCreateInfo->format);
++	// Check capabilities before format conversion: unknown VkFormats have no diagnostic name.
++	VkFormatFeatureFlags2 formatFeatures = pixFmts->getVkFormatProperties3(pCreateInfo->format).bufferFeatures;
++	_mtlPixelFormat = mvkIsAnyFlagEnabled(formatFeatures,
++										VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT | VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT)
++						? pixFmts->getMTLPixelFormat(pCreateInfo->format) : MTLPixelFormatInvalid;
+     VkExtent2D fmtBlockSize = pixFmts->getBlockTexelSize(pCreateInfo->format);  // Pixel size of format
      size_t bytesPerBlock = pixFmts->getBytesPerBlock(pCreateInfo->format);
  	_bytesPerPixel = static_cast<uint32_t>(bytesPerBlock);
  	_mtlTexture = nil;
 +
 +	// Games can request formats with no Metal texel-buffer representation (e.g. RGB32).
 +	// Reject them before offset/size arithmetic or Metal's always-on alignment validation.
-+	if (!_mtlPixelFormat || !bytesPerBlock ||
-+		!mvkIsAnyFlagEnabled(pixFmts->getVkFormatProperties3(pCreateInfo->format).bufferFeatures,
-+							 VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT | VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT)) {
++	if (!_mtlPixelFormat || !bytesPerBlock) {
 +		setConfigurationResult(reportError(VK_ERROR_FORMAT_NOT_SUPPORTED,
-+										   "vkCreateBufferView(): Format %s does not support texel buffers on this device.",
-+										   pixFmts->getName(pCreateInfo->format)));
++										   "vkCreateBufferView(): Format %d does not support texel buffers on this device.",
++										   pCreateInfo->format));
 +		return;
 +	}
  	auto& mtlFeats = getMetalFeatures();
