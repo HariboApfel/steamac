@@ -191,6 +191,16 @@
 #              fault in AGX). A shared compiler compiles as concurrently. A thread compiling for Metal is named after
 #              its compile ("kk <kind> <MSL hashes> compiler <n>: <k> in flight on <m>", shown in crash reports);
 #              MESA_KK_DEBUG=compiles logs every compile. Repro: host/moltenvk/repro compilers.c.
+#   0059       steamac: reject zero/oversized texel buffer views before Metal (STEAMAC-3S/3Z/3J/3F/4B/3K/3G/3R).
+#              VK_WHOLE_SIZE may round down to zero texels or exceed Metal's 2^28 texture-buffer width; both ordinary
+#              and placement sparse texture constructors abort on those descriptors. maxTexelBufferElements reserves
+#              space for the alignment prefix and RGB32 expansion, so valid maximum-size views remain representable.
+#              Repro: host/moltenvk/repro texture_descriptors.c (invalid widths, valid boundaries, partial last texel).
+#   0061       steamac: non-sparse texture-buffer views inherit their buffer's residency (STEAMAC-3V/4H/3T).
+#              Registering each shared-storage view separately exhausted IOGPU's residency-set hash table
+#              (1,048,576 slots on M1 Max), which aborts rather than returning an error. Sparse texture buffers
+#              and textures used as attachments retain their own registrations. Repro: residency_limits.c
+#              (1,100,000 simultaneous views, real texel fetches before/after removing unrelated views).
 #
 # Two meson builds: (1) the host compiler tools mesa_clc + vtn_bindgen2 against Homebrew LLVM
 # (shared) and SPIRV-LLVM-Translator, installed into work/build/host-kosmickrisp/clc; (2) the driver
@@ -376,6 +386,8 @@ mv -f "$lib.tmp.$$" "$lib"
 	echo "  0045 = steamac: no per-device occlusion / per-process timestamp pool ceilings; vkCreateQueryPool failures logged"
 	echo "  0046 = steamac: Metal command buffers of their own only for render passes with pre_gfx work (blits, clears: none)"
 	echo "  0047 = steamac: KK_WORKAROUND_11 (one shared MTL4Compiler) kept on macOS 27; compiling threads named after their compile"
+	echo "  0059 = steamac: texel-buffer widths checked before Metal; advertised limit includes alignment and RGB32 expansion"
+	echo "  0061 = steamac: buffer-backed texture-buffer views inherit buffer residency, avoiding IOGPU's per-set entry limit"
 	echo
 	echo "Known gaps (host/moltenvk/repro/run.sh): transform feedback with strip geometry shaders and"
 	echo "the overflow counter (draft !44928)."

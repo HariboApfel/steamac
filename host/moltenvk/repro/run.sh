@@ -84,6 +84,9 @@
 # 17. msl_helpers.c: fragment helpers with an OpKill-only block, directly and through a nested caller
 #    (STEAMAC-1Q): discard left-half pixels, render right-half colors, suppress writes after discard;
 #    a compute helper named log10(float) (STEAMAC-1R), its implementation's values read back.
+#    a graphics link failure with a missing varying (STEAMAC-2M/41) must retain reflected stage diagnostics.
+#    texture_helpers.c (STEAMAC-3W): robust sampling through a sampler2D helper with an immutable YCbCr
+#    conversion must compile, and sampling a null descriptor must return four zeros.
 # 18. frag_output.c: fragment outputs of another numeric type than their color attachment (STEAMAC-2C: an unsigned
 #    output to R32_SINT failed in Metal): signedness changes, a padded scalar, location 1 next to a matching output,
 #    an output array indexed dynamically, float to R32_UINT and ivec4 to RGBA8_UNORM (bits checked on MoltenVK only),
@@ -315,6 +318,25 @@ build descriptor_heap
 
 build msl_helpers
 "$work/msl_helpers" "$gspv"
+if [ "$driver" = moltenvk ]; then
+	link_log=$work/link-log.txt
+	"$work/msl_helpers" "$gspv" link-log 2> "$link_log"
+	if grep -q '^\[mvk-msl\] // vertex entry=main hash=' "$link_log" &&
+		grep -q '^\[mvk-msl\] // fragment entry=main hash=' "$link_log" &&
+		grep -q '^\[mvk-msl\] // in location=3 component=0 type=.* width=4 ' "$link_log"; then
+		echo "OK graphics pipeline failure includes stage interfaces"
+	else
+		cat "$link_log"
+		echo "FAIL graphics pipeline failure lacks stage interfaces"
+		exit 1
+	fi
+fi
+
+if [ "$driver" = moltenvk ]; then
+	# STEAMAC-3W exercises SPIRV-Cross' dynamic sampler wrapper (KK uses its own NIR-to-MSL compiler).
+	build texture_helpers
+	"$work/texture_helpers" "$gspv"
+fi
 
 build frag_output
 "$work/frag_output" "$gspv"
@@ -328,6 +350,9 @@ build host_memory
 "$work/host_memory"
 
 if [ "$driver" = kosmickrisp ]; then
+	build texture_descriptors
+	"$work/texture_descriptors"
+
 	build sparse
 	"$work/sparse" "$gspv"
 	"$work/sparse" "$gspv" minmax-log
@@ -343,6 +368,17 @@ if [ "$driver" = kosmickrisp ]; then
 		exit 1
 	fi
 	grep -e '^OK' -e '^SKIP' "$residency_log"
+
+	# Buffer-backed texture-buffer views share one resident buffer allocation, not one set entry per view.
+	build residency_limits
+	residency_limits_log=$work/residency-limits.log
+	MTL_DEBUG_LAYER_WARNING_MODE=nslog "$work/residency_limits" "$gspv" > "$residency_limits_log" 2>&1 || { cat "$residency_limits_log"; exit 1; }
+	if grep -q 'not added to any residency set' "$residency_limits_log"; then
+		cat "$residency_limits_log"
+		echo "FAIL residency limits: buffer-backed texture views are not resident"
+		exit 1
+	fi
+	grep '^OK' "$residency_limits_log"
 
 	build provoking_last
 	"$work/provoking_last" "$gspv"
