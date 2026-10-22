@@ -463,10 +463,10 @@ private final class PadSlot {
         let homeChanged = next.buttons[BTN.MODE] != state.buttons[BTN.MODE]
         state = next
         if !events.isEmpty {
-            let sent = port.send("ev " + events.joined(separator: " "))
+            let accepted = port.send("ev " + events.joined(separator: " "))
             if homeChanged {
                 log("\(tag): Home/PS \(next.buttons[BTN.MODE] == true ? "pressed" : "released") "
-                    + (sent ? "sent to SteamOS" : "not sent: pad port unavailable"))
+                    + (accepted ? "queued for SteamOS" : "dropped before pad port"))
             }
         }
     }
