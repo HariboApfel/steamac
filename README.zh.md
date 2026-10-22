@@ -489,7 +489,11 @@ Proton 10.0（x86-64，在 Steam Linux Runtime 3.0 中经 FEX 运行），`steam
 在下次 Steam 启动时切换。从不使用通配条目（“0”）：Steam 也会把高优先级通配应用到自身工具上，曾因此清空 FEX 工具。
 关闭时删除脚本添加的条目；用户之后在 Steam 中修改的条目保持不变。Proton 10.0 上的 D3D12 游戏的 Wine 部分改在 FEX 下而非
 ARM64EC 运行，会消耗更多 CPU。已在 M1 Max 上端到端验证：Death's Door（Unity，D3D11）在 Proton 10.0 上启动，渲染器显示
-“Apple M1 Max”，并经执行器的图层绘制。这是全局选择，而非按游戏设置。
+“Apple M1 Max”，并经执行器的图层绘制。同一台 M1 Max 上的测量（macOS 27，虚拟机 6 vCPU / 8 GB，120 Hz，KosmicKrisp）：
+Death's Door 标题画面在默认 Proton 11.0 (ARM64) + DXVK 路径约 41 FPS，在 DXMT 上约 117（受 120 Hz 显示器限制）；
+d3d11bench 100 次绘制 + 16 次全屏通道为 44 / 50（Proton 10.0 + DXVK）/ 100 FPS，2000 次绘制 + 4 次通道为
+133 / 139 / 115（DXMT 止于显示器 120 Hz，Vulkan 路径可超过）。经 Steam 启动的三次 20 秒运行取中位数
+（DXMT 取两次启动共六次）；详见网站。这是全局选择，而非按游戏设置。
 DXMT 的 winemetal 调用通过 virtio-gpu 到达 **Mac 上虚拟机进程内部**的执行器，
 由其在虚拟机视图内呈现 `CAMetalLayer`。D3D12（vkd3d-proton）和原生 Vulkan 仍走 Venus；
 此路径**仅支持 D3D11/D3D10**，不支持 D3D9。DXMT 仍有兼容性缺口，包括**不支持流输出

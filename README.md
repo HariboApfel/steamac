@@ -684,6 +684,11 @@ tools as well and emptied the FEX tool that way. Off removes the entries the scr
 changes in Steam afterwards is left alone. D3D12 games on Proton 10.0 then run their Wine side under FEX
 instead of ARM64EC, which costs CPU time. Measured end to end on an M1 Max: Death's Door (Unity, D3D11)
 starts on Proton 10.0, reports the renderer as "Apple M1 Max" and draws through the executor's layer.
+Measured on that M1 Max (macOS 27, VM with 6 vCPUs / 8 GB at 120 Hz, KosmicKrisp): Death's Door's title
+screen ~41 FPS on the default Proton 11.0 (ARM64) + DXVK path, ~117 on DXMT (held by the 120 Hz display);
+d3d11bench with 100 draws and 16 full-screen passes 44 / 50 (Proton 10.0 + DXVK) / 100 FPS, with 2000
+draws and 4 passes 133 / 139 / 115 (DXMT stops at the display's 120 Hz, the Vulkan path goes past it).
+Medians of three 20 s runs launched through Steam (DXMT: six over two boots); details on the site.
 This is a global selection, not a per-game setting. DXMT's winemetal calls cross virtio-gpu to an
 executor **inside the VM process on the Mac**, which presents a `CAMetalLayer` in the VM view.
 D3D12 (vkd3d-proton) and native Vulkan remain on Venus; this path is for **D3D11/D3D10 only**, not D3D9.
