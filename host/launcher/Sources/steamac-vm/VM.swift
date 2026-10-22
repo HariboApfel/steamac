@@ -107,10 +107,12 @@ final class VM {
         if let lib = o.wmtrLibrary {
             setenv("STEAMAC_WMTR", "1", 1)
             setenv("STEAMAC_WMTR_LIB", lib, 1)
+            setenv("WMTR_PRESENT", "overlay", 1)
             log("gpu: wmtr context type offered (experimental), executor \(lib)")
         } else {
             unsetenv("STEAMAC_WMTR")
             unsetenv("STEAMAC_WMTR_LIB")
+            unsetenv("WMTR_PRESENT")
         }
         let flags = o.gpuFlags ?? (STEAMAC_VIRGL_VENUS | STEAMAC_VIRGL_NO_VIRGL)
         try krun("krun_set_gpu_options2", krun_set_gpu_options2(ctx, flags, UInt64(o.shmMiB) << 20))

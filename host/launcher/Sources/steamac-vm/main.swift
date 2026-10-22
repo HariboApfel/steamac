@@ -48,6 +48,7 @@ if options.selftestSettings { SettingsSelfTest.run(options, overrides: settingsO
 if options.selftestProvision { ProvisionSelfTest.run(options) }
 if options.selftestRemotePlay { RemotePlaySelfTest.run() }
 if options.selftestPointer { PointerSelfTest.run() }
+if options.selftestGameLayers { GameLayerSelfTest.run() }
 if options.createDisk != nil { CreateDiskCLI.run(options, settings: settings) }
 if let disk = options.growDisk {
     do {

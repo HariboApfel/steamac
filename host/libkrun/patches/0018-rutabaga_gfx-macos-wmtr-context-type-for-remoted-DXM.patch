@@ -14,10 +14,18 @@ wmtr_layout, and two callbacks, blob_ptr and wake); this patch only
 carries the transport:
 
 - blobs (blob_id = ring/buffer number below 1024, checked before
-  narrowing to u32; each id created once, as blobs live as long as the
-  context; size at most max_blob, 4 GiB) are POSIX shared memory, mapped
-  into the guest by the existing SHM blob path and into the VMM for the
-  executor;
+  narrowing to u32; live ids unique; size at most max_blob, 4 GiB) are
+  POSIX shared memory, mapped into the guest by the existing SHM blob
+  path and into the VMM for the executor. CTX_DETACH_RESOURCE reaches
+  the context's detach before RESOURCE_UNREF drops the VMM's mapping
+  and descriptor (unref itself only reaches the component). Detach
+  forgets an arena blob and overlays the context's mapping with fresh
+  MAP_FIXED | MAP_ANON | MAP_PRIVATE memory: the shm pages leave the
+  footprint once the VMM unmaps and unrefs it, but the address range
+  remains reserved until context teardown for stale executor pointers.
+  The released number can be created again; the client must release
+  only idle arenas with no live ranges or host buffers. Blob 0 is the
+  ring and is never released before executor teardown;
 - EXECBUFFER carries 24-byte commands: RING (blob 0 is initialised:
   start the executor; refused when blob 0, sized by the guest, is
   smaller than the ring layout the library reports through wmtr_layout,
@@ -52,14 +60,14 @@ covers virgl, virgl2, venus, drm and cross-domain, and the guest never
 asks for an index at or above that count. Without it nothing changes: no
 library is loaded and the guest sees the same five capsets.
 
-Unit tests (cargo test --lib wmtr in rutabaga_gfx, against a stand-in
+Unit tests (15, cargo test --lib wmtr in rutabaga_gfx, against a stand-in
 executor: no Metal, no library): off unless enabled; a WAIT fence stays
 pending until the reply and completes on it; satisfied WAITs and fences
 without a WAIT complete at once on an otherwise idle ring; pending
 fences complete on context drop and the executor is destroyed; malformed
 blobs and commands are rejected; on a shared ring (slots 0 and 62,
 events and slot 70) later fences wait for an earlier pending one and
-complete with it, in order; reused blob ids, ids at or above 1024 (1 <<
+complete with it, in order; live duplicate blob ids, ids at or above 1024 (1 <<
 32, u64::MAX) and blobs over max_blob are rejected and leave the
 existing blob in place; RING on a blob 0 smaller than the ring layout
 is refused before the executor starts; a library without
@@ -69,15 +77,21 @@ while the executor is destroyed does not call into it; two WAITs of one
 EXECBUFFER (slots 0 and 62) both hold its fence; WAITs of an EXECBUFFER
 without a fence or of a refused one hold no later fence; a reply from
 inside wmtr_host_create completes the fence waiting for it when RING
-returns; a partial command is refused. virtio::gpu: num_capsets stays 5
-without STEAMAC_WMTR.
+returns; a partial command is refused; a detached 64 MiB arena leaves
+at least 90% of its size from the process footprint after unref, stops
+resolving and leaves fresh writable anonymous memory at its old address;
+its number can be created again (but not duplicated while live), and
+blob 0 survives detach and unref while the executor keeps running.
+Before the detach change, the three arena release tests fail: footprint
+65 -> 65 MiB, released blob still resolves, and recreated id is refused.
+virtio::gpu (12 tests): num_capsets stays 5 without STEAMAC_WMTR.
 ---
- src/devices/src/virtio/gpu/device.rs   |  23 +-
- src/rutabaga_gfx/src/lib.rs            |   9 +
- src/rutabaga_gfx/src/rutabaga_core.rs  |  18 +-
- src/rutabaga_gfx/src/rutabaga_utils.rs |   3 +
- src/rutabaga_gfx/src/wmtr.rs           | 856 +++++++++++++++++++++++++
- 5 files changed, 906 insertions(+), 3 deletions(-)
+ src/devices/src/virtio/gpu/device.rs   |   23 +-
+ src/rutabaga_gfx/src/lib.rs            |    9 +
+ src/rutabaga_gfx/src/rutabaga_core.rs  |   18 +-
+ src/rutabaga_gfx/src/rutabaga_utils.rs |    3 +
+ src/rutabaga_gfx/src/wmtr.rs           | 1010 ++++++++++++++++++++++++
+ 5 files changed, 1060 insertions(+), 3 deletions(-)
  create mode 100644 src/rutabaga_gfx/src/wmtr.rs
 
 diff --git a/src/devices/src/virtio/gpu/device.rs b/src/devices/src/virtio/gpu/device.rs
@@ -223,10 +237,10 @@ index 085912c..3ccfd93 100644
  /// Rutabaga handle types (memory and sync in same namespace)
 diff --git a/src/rutabaga_gfx/src/wmtr.rs b/src/rutabaga_gfx/src/wmtr.rs
 new file mode 100644
-index 0000000..90b1ba1
+index 0000000..c039ef5
 --- /dev/null
 +++ b/src/rutabaga_gfx/src/wmtr.rs
-@@ -0,0 +1,856 @@
+@@ -0,0 +1,1010 @@
 +// SPDX-License-Identifier: Apache-2.0
 +
 +//! wmtr: a virtio-gpu context type that carries DXMT's winemetal unix calls from a guest process
@@ -238,6 +252,14 @@ index 0000000..90b1ba1
 +//! 24-byte commands: RING (blob 0 is initialised: start the executor), KICK (wake it), WAIT (the
 +//! fence of this EXECBUFFER completes when the reply slot or event queue reaches `seq`). Every WAIT
 +//! of an EXECBUFFER applies to its fence; WAITs of an EXECBUFFER without a fence are dropped.
++//!
++//! Blob numbers are unique among live blobs. When the guest releases an arena blob, its
++//! CTX_DETACH_RESOURCE reaches `detach` before RESOURCE_UNREF closes the descriptor. Detach forgets
++//! the blob and replaces this context's shared-memory mapping with fresh anonymous memory, so the
++//! shm pages can be freed after the VMM unmaps and unrefs it. The old address range stays reserved
++//! until context teardown for executor pointers, and the released number can be created again.
++//! The client must release only idle arenas with no live ranges or host buffers. Blob 0 is the ring
++//! and is never released before the executor is destroyed.
 +//!
 +//! Each (context, ring) is an in-order timeline for libkrun and the guest: signalling a fence
 +//! retires every earlier fence on its ring. Reply slots share rings (slot s waits on ring
@@ -270,7 +292,7 @@ index 0000000..90b1ba1
 +const WMTR_VGPU_KICK: u32 = 2;
 +const WMTR_VGPU_WAIT: u32 = 3;
 +const CMD_SIZE: usize = 24;
-+/// Blob ids are wmtr blob numbers 0..MAX_BLOBS (0 is the ring); each id is created once.
++/// Blob ids are wmtr blob numbers 0..MAX_BLOBS (0 is the ring); only live ids must be unique.
 +const MAX_BLOBS: u64 = 1024;
 +/// Largest blob, advertised to the guest as max_blob in the capset.
 +const MAX_BLOB_SIZE: u64 = 4 << 30;
@@ -465,7 +487,10 @@ index 0000000..90b1ba1
 +    ops: Box<WmtrHostOps>,
 +    /// WAITs of the EXECBUFFER being submitted, for the fence created right after it.
 +    pending: Vec<(u32, u64)>,
++    /// All address ranges this context mapped, including released blobs; unmapped on teardown.
 +    maps: Vec<(usize, u64)>,
++    /// Resource id -> (blob number, address, size) for blobs the guest still holds.
++    resource_blobs: BTreeMap<u32, (u32, usize, u64)>,
 +}
 +
 +// SAFETY: the raw pointers are only host addresses of mappings this context owns.
@@ -491,8 +516,8 @@ index 0000000..90b1ba1
 +            return Err(RutabagaError::SpecViolation("wmtr: bad blob"));
 +        }
 +        let blob = id as u32;
-+        // Blobs live as long as the context (the executor may hold their addresses), so an id
-+        // is never replaced: a second create would leak the first mapping and move the blob.
++        // A live id cannot be replaced: the executor may still use its mapping. Detach removes
++        // released arena blobs from this table, allowing the guest to reuse their numbers.
 +        if self.shared.blobs.lock().unwrap().contains_key(&blob) {
 +            return Err(RutabagaError::SpecViolation("wmtr: blob id in use"));
 +        }
@@ -524,6 +549,7 @@ index 0000000..90b1ba1
 +        };
 +        self.shared.blobs.lock().unwrap().insert(blob, (ptr, size));
 +        self.maps.push((ptr, size));
++        self.resource_blobs.insert(resource_id, (blob, ptr, size));
 +        // SAFETY: fd is a fresh descriptor we own.
 +        let os_handle = unsafe { SafeDescriptor::from_raw_descriptor(fd) };
 +        Ok(RutabagaResource {
@@ -563,7 +589,39 @@ index 0000000..90b1ba1
 +
 +    fn attach(&mut self, _resource: &mut RutabagaResource) {}
 +
-+    fn detach(&mut self, _resource: &RutabagaResource) {}
++    /// CTX_DETACH_RESOURCE stops this context using a blob; RESOURCE_UNREF later drops the VMM's
++    /// mapping and descriptor but does not call the context. Forget idle arenas here, while keeping
++    /// the ring alive until executor teardown and keeping old executor addresses mapped.
++    fn detach(&mut self, resource: &RutabagaResource) {
++        let Some(&(blob, ptr, size)) = self.resource_blobs.get(&resource.resource_id) else {
++            return;
++        };
++        if blob == 0 {
++            return;
++        }
++        self.resource_blobs.remove(&resource.resource_id);
++        {
++            let mut blobs = self.shared.blobs.lock().unwrap();
++            if blobs.get(&blob) == Some(&(ptr, size)) {
++                blobs.remove(&blob);
++            }
++        }
++        // SAFETY: replaces this context's own mapping. The range remains reserved until Drop,
++        // so stale executor pointers see anonymous memory instead of an unmapped address.
++        let p = unsafe {
++            libc::mmap(
++                ptr as *mut c_void,
++                size as usize,
++                libc::PROT_READ | libc::PROT_WRITE,
++                libc::MAP_FIXED | libc::MAP_ANON | libc::MAP_PRIVATE,
++                -1,
++                0,
++            )
++        };
++        if p == libc::MAP_FAILED {
++            error!("wmtr: cannot release blob {blob} ({size} bytes)");
++        }
++    }
 +
 +    fn context_create_fence(&mut self, fence: RutabagaFence) -> RutabagaResult<()> {
 +        let wait = std::mem::take(&mut self.pending);
@@ -711,6 +769,7 @@ index 0000000..90b1ba1
 +            ops,
 +            pending: Vec::new(),
 +            maps: Vec::new(),
++            resource_blobs: BTreeMap::new(),
 +        }
 +    }
 +}
@@ -942,7 +1001,7 @@ index 0000000..90b1ba1
 +        assert_eq!(std::mem::size_of::<WmtrHostOps>(), 2 * std::mem::size_of::<usize>());
 +    }
 +
-+    /// Each blob id is created once and only below MAX_BLOBS: a reused id or one that truncates to
++    /// Live blob ids are unique and only below MAX_BLOBS: a duplicate or one that truncates to
 +    /// a smaller u32 (1 << 32 would alias the ring) is rejected and leaves the existing blob alone.
 +    #[test]
 +    fn blob_ids_are_unique_and_in_range() {
@@ -960,6 +1019,115 @@ index 0000000..90b1ba1
 +        ctx.context_create_blob(15, blob(MAX_BLOBS - 1, 4096), None).unwrap();
 +        let caps = comp.get_capset(RUTABAGA_CAPSET_WMTR, 1);
 +        assert_eq!(u64::from_le_bytes(caps[8..16].try_into().unwrap()), MAX_BLOB_SIZE);
++    }
++
++    fn footprint() -> u64 {
++        // SAFETY: an all-zero rusage_info_v2 is a valid out-parameter.
++        let mut usage: libc::rusage_info_v2 = unsafe { std::mem::zeroed() };
++        // SAFETY: usage has the type and size written by RUSAGE_INFO_V2.
++        let rc = unsafe {
++            libc::proc_pid_rusage(
++                std::process::id() as i32,
++                libc::RUSAGE_INFO_V2,
++                &mut usage as *mut _ as *mut libc::rusage_info_t,
++            )
++        };
++        assert_eq!(rc, 0);
++        usage.ri_phys_footprint
++    }
++
++    fn resolve(ctx: &WmtrContext, blob: u32) -> (*mut u8, u64) {
++        let mut size = 0;
++        let ptr = cb_blob_ptr(Arc::as_ptr(&ctx.shared) as *mut c_void, blob, &mut size);
++        (ptr as *mut u8, size)
++    }
++
++    /// Detach removes the executor's mapping of the shm object; unref drops the last descriptor.
++    /// The physical pages must then leave the footprint, without waiting for context teardown.
++    #[test]
++    fn detach_releases_the_blob_memory() {
++        let _serial = serial();
++        let (comp, handler) = component(Arc::new(Mutex::new(Vec::new())));
++        let mut ctx = comp.new_context(handler);
++        let size = 64 << 20;
++        let resource = ctx.context_create_blob(81, blob(3, size), None).unwrap();
++        let (ptr, bytes) = resolve(&ctx, 3);
++        assert!(!ptr.is_null());
++        assert_eq!(bytes, size);
++        // SAFETY: ptr is the context's writable mapping of size bytes.
++        unsafe { std::ptr::write_bytes(ptr, 0x5a, size as usize) };
++        let before = footprint();
++        ctx.detach(&resource);
++        drop(resource); // the VMM's unref closes its descriptor
++        let after = footprint();
++        assert!(
++            before >= after + size * 9 / 10,
++            "footprint {} -> {} MiB after releasing a {} MiB blob",
++            before >> 20,
++            after >> 20,
++            size >> 20
++        );
++    }
++
++    /// Stale executor addresses remain readable and writable, but resolve no longer finds the blob.
++    #[test]
++    fn detach_stops_resolving_and_reserves_address() {
++        let (comp, handler) = component(Arc::new(Mutex::new(Vec::new())));
++        let mut ctx = comp.new_context(handler);
++        let resource = ctx.context_create_blob(82, blob(4, 16384), None).unwrap();
++        let (ptr, size) = resolve(&ctx, 4);
++        // SAFETY: ptr is our writable mapping of size bytes.
++        unsafe { std::ptr::write_bytes(ptr, 0x5a, size as usize) };
++        ctx.detach(&resource);
++        assert!(resolve(&ctx, 4).0.is_null(), "released blob still resolves");
++        assert_eq!(ctx.maps, vec![(ptr as usize, size)], "address range must stay reserved");
++        // SAFETY: detach keeps the range mapped as fresh anonymous memory until context teardown.
++        unsafe {
++            assert!(std::slice::from_raw_parts(ptr, size as usize).iter().all(|&b| b == 0));
++            ptr.write_volatile(0xa5);
++            assert_eq!(ptr.read_volatile(), 0xa5);
++        }
++        ctx.detach(&resource); // repeated detach is harmless
++    }
++
++    #[test]
++    fn released_blob_number_can_be_created_again() {
++        let (comp, handler) = component(Arc::new(Mutex::new(Vec::new())));
++        let mut ctx = comp.new_context(handler);
++        let resource = ctx.context_create_blob(83, blob(5, 16384), None).unwrap();
++        let old = resolve(&ctx, 5);
++        ctx.detach(&resource);
++        drop(resource);
++        let again = ctx.context_create_blob(84, blob(5, 32768), None).unwrap();
++        let current = resolve(&ctx, 5);
++        assert!(!current.0.is_null());
++        assert_ne!(current.0, old.0, "old range must stay reserved");
++        assert_eq!(current.1, 32768);
++        assert!(ctx.context_create_blob(85, blob(5, 16384), None).is_err(), "live duplicate");
++        ctx.detach(&again);
++        assert!(resolve(&ctx, 5).0.is_null());
++    }
++
++    #[test]
++    fn ring_survives_detach() {
++        let _serial = serial();
++        let (comp, handler) = component(Arc::new(Mutex::new(Vec::new())));
++        let mut ctx = comp.new_context(handler);
++        let ring = ctx.context_create_blob(86, blob(0, 65536), None).unwrap();
++        let original = resolve(&ctx, 0);
++        // SAFETY: blob 0 is a writable mapping of 65536 bytes.
++        unsafe { original.0.write_volatile(0x5a) };
++        ctx.submit_cmd(&mut cmd(WMTR_VGPU_RING, 0, 0), &[]).unwrap();
++        ctx.detach(&ring);
++        drop(ring);
++        assert_eq!(resolve(&ctx, 0), original);
++        // SAFETY: the ring mapping survives detach and unref until the executor is destroyed.
++        unsafe { assert_eq!(original.0.read_volatile(), 0x5a) };
++        assert!(ctx.context_create_blob(87, blob(0, 65536), None).is_err());
++        ctx.submit_cmd(&mut cmd(WMTR_VGPU_KICK, 0, 0), &[]).unwrap();
++        assert_eq!(KICKS.load(Ordering::SeqCst), 1);
++        drop(ctx);
++        assert!(FAKE.lock().unwrap().is_none());
 +    }
 +
 +    /// RING on a blob 0 smaller than the executor's ring layout is refused before the executor is

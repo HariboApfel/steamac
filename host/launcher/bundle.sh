@@ -2,8 +2,9 @@
 # Assemble work/out/FX Steam Launcher.app (called by build.sh with the freshly built binary):
 #   Contents/MacOS/steamac-vm           launcher, rpath @executable_path/../Frameworks only
 #   Contents/Frameworks/*.dylib         libkrun, libvirglrenderer, libMoltenVK, libvulkan_kosmickrisp
-#                                       (when built: host/kosmickrisp, macOS 26+) + their non-system
-#                                       dependencies (libepoxy), install names @rpath/<name>
+#                                       (when built: host/kosmickrisp, macOS 26+), libwmtr_host
+#                                       (when built: host/dxmt) + their non-system dependencies
+#                                       (libepoxy), install names @rpath/<name>
 #   Contents/Resources/                 gvproxy, Image, initramfs.cpio.gz, steamac-layer.img,
 #                                       desync + steamdeck-images.pem (Valve RAUC CA) for
 #                                       "Create New Disk…", generated licenses/ notices,
@@ -88,6 +89,7 @@ copy_lib() {
 # MoltenVK always, KosmicKrisp when it was built (macOS 26+ build hosts).
 libs=(libkrun.1.dylib libvirglrenderer.1.dylib libMoltenVK.dylib)
 [[ -f "$KRUN_PREFIX/lib/libvulkan_kosmickrisp.dylib" ]] && libs+=(libvulkan_kosmickrisp.dylib)
+[[ -f "$KRUN_PREFIX/lib/libwmtr_host.dylib" ]] && libs+=(libwmtr_host.dylib)
 for lib in "${libs[@]}"; do
     copy_lib "$KRUN_PREFIX/lib/$lib"
 done

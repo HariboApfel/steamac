@@ -7,6 +7,7 @@
 #   ./build.sh host       only the macOS side (MoltenVK, KosmicKrisp on macOS 26+, libepoxy,
 #                         virglrenderer, libkrun, launcher)
 #   ./build.sh guest      only the guest side (kernel, rootfs, Mesa, initramfs, layer, disk)
+#   ./build.sh dxmt       DXMT host executor + guest dlls/unixlib (requires Rosetta and linux/amd64 Docker)
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -34,6 +35,7 @@ guest() {
 case ${1:-all} in
     host) host ;;
     guest) guest ;;
+    dxmt) host/dxmt/build.sh ;;
     all) host; guest ;;
-    *) echo "usage: $0 [all|host|guest]" >&2; exit 64 ;;
+    *) echo "usage: $0 [all|host|guest|dxmt]" >&2; exit 64 ;;
 esac

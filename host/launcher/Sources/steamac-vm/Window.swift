@@ -704,6 +704,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         }
         guard f != guestFocus else { return }
         guestFocus = f
+        view.gameLayersVisible = focusedGame != nil
         stall?.gameFocused = focusedGame != nil
         updateNoPictureGate()
         log("input: guest focus \(f)")

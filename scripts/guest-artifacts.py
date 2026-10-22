@@ -87,6 +87,23 @@ def hash_entry(digest, path, name):
         raise ValueError(f"missing or unsupported input: {path}")
 
 
+def hash_tree(digest, path, name):
+    if path.is_dir() and not path.is_symlink():
+        add_record(digest, name, "directory")
+        for directory, dirs, files in os.walk(path, followlinks=False):
+            # Include symlinked directories without following them.
+            for entry_name in sorted(dirs + files):
+                entry = Path(directory) / entry_name
+                relative = entry.relative_to(path)
+                if entry.is_dir() and not entry.is_symlink():
+                    add_record(digest, name, str(relative), "directory")
+                else:
+                    hash_entry(digest, entry, f"{name}/{relative}")
+            dirs.sort()
+    else:
+        hash_entry(digest, path, name)
+
+
 def input_digest(kind):
     paths = subprocess.check_output(
         ["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others",
@@ -103,6 +120,13 @@ def input_digest(kind):
     if kind == "layer":
         check("mesa")
         add_record(digest, "mesa-receipt", file_digest(stamp_path("mesa")))
+        # This optional build output is ignored by Git, so ls-files cannot
+        # include it. Bind both its absence and its complete working-tree bytes.
+        dxmt = OUT / "dxmt"
+        if dxmt.exists() or dxmt.is_symlink():
+            hash_tree(digest, dxmt, "work/out/dxmt")
+        else:
+            add_record(digest, "work/out/dxmt", "ABSENT")
     if kind == "mesa":
         for architecture in ("mesa-aarch64", "mesa-x86"):
             check(architecture)
@@ -114,20 +138,7 @@ def output_digest(kind, resources=None):
     digest = hashlib.sha256()
     paths = OUTPUTS[kind] if resources is None else (resources / OUTPUTS[kind][0].name,)
     for index, path in enumerate(paths):
-        if path.is_dir() and not path.is_symlink():
-            add_record(digest, str(index), "directory")
-            for directory, dirs, files in os.walk(path, followlinks=False):
-                # Include symlinked directories without following them.
-                for name in sorted(dirs + files):
-                    entry = Path(directory) / name
-                    relative = entry.relative_to(path)
-                    if entry.is_dir() and not entry.is_symlink():
-                        add_record(digest, str(index), str(relative), "directory")
-                    else:
-                        hash_entry(digest, entry, f"{index}/{relative}")
-                dirs.sort()
-        else:
-            hash_entry(digest, path, str(index))
+        hash_tree(digest, path, str(index))
     return digest.hexdigest()
 
 

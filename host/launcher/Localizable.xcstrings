@@ -3772,22 +3772,6 @@
         }
       }
     },
-    "Offers SteamOS the wmtr GPU channel, through which DXMT can run a D3D11 game's Metal calls on the Mac instead of in the VM. Needs an executor library on the Mac and a DXMT build in SteamOS that uses it; neither ships with the launcher yet. The library runs inside the VM process: a fault in it stops the VM." : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Даёт SteamOS GPU-канал wmtr, через который DXMT может выполнять вызовы Metal игры на D3D11 на самом Mac, а не в ВМ. Нужны библиотека-исполнитель на Mac и сборка DXMT в SteamOS, которая её использует; ни то ни другое пока не входит в лаунчер. Библиотека работает внутри процесса ВМ: сбой в ней останавливает ВМ."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "为 SteamOS 提供 wmtr GPU 通道，DXMT 可借此在 Mac 上而不是在虚拟机内执行 D3D11 游戏的 Metal 调用。需要 Mac 上的执行器库以及 SteamOS 中使用它的 DXMT 构建；两者目前都不随启动器提供。该库在虚拟机进程内运行：其中的故障会使虚拟机停止。"
-          }
-        }
-      }
-    },
     "On top of the guest's own volume." : {
       "localizations" : {
         "ru" : {
@@ -6188,6 +6172,22 @@
         }
       }
     },
+    "The bundled libwmtr_host.dylib runs DXMT's Metal calls on the Mac. Choose another executor library only if you trust it." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Входящая в комплект libwmtr_host.dylib выполняет вызовы Metal от DXMT на Mac. Выбирайте другую библиотеку-исполнитель, только если доверяете ей."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随附的 libwmtr_host.dylib 在 Mac 上执行 DXMT 的 Metal 调用。请仅在信任其他执行器库的情况下选择它。"
+          }
+        }
+      }
+    },
     "The drive disconnected or reported an I/O error. Check its connection and run Disk Utility First Aid, then try again; use another drive if the error continues." : {
       "localizations" : {
         "ru" : {
@@ -7153,6 +7153,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭窗口时"
+          }
+        }
+      }
+    },
+    "When on, installed Windows games without a compatibility tool of their own run on Proton 10.0 (x86-64; Steam downloads it the first time) instead of Proton 11.0 (ARM64), and their D3D11 and D3D10 draw through DXMT directly with the Mac's Metal. D3D12 and Vulkan stay on the usual Vulkan path, emulated a little more. A game installed while Steam runs switches at Steam's next start. Switching off restores Proton's own files and the games' tools. DXMT has compatibility gaps, including no D3D11 stream output. Security risk: while on, programs in SteamOS can run code on the Mac with your user's rights. The executor runs inside the VM process and trusts the guest; a fault can stop the VM." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Когда включено, установленные Windows-игры без собственного инструмента совместимости запускаются на Proton 10.0 (x86-64; Steam скачает его при первом запуске) вместо Proton 11.0 (ARM64), а их D3D11 и D3D10 рисуют через DXMT прямо на Metal этого Mac. D3D12 и Vulkan остаются на обычном пути Vulkan, с чуть большей эмуляцией. Игра, установленная при работающем Steam, переключится при следующем запуске Steam. Выключение возвращает собственные файлы Proton и инструменты игр. В DXMT есть пробелы совместимости, в том числе нет D3D11 stream output. Риск безопасности: пока включено, программы в SteamOS могут выполнять код на Mac с правами вашего пользователя. Исполнитель работает внутри процесса ВМ и доверяет гостю; сбой может остановить ВМ."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启后，没有自选兼容性工具的已安装 Windows 游戏改用 Proton 10.0（x86-64；首次使用时由 Steam 下载）而非 Proton 11.0 (ARM64) 运行，其 D3D11 与 D3D10 经 DXMT 直接用 Mac 的 Metal 绘制。D3D12 与 Vulkan 仍走常规 Vulkan 路径，模拟开销略多。Steam 运行期间安装的游戏会在 Steam 下次启动时切换。关闭后恢复 Proton 自身的文件和游戏的工具。DXMT 存在兼容性缺口，包括不支持 D3D11 流输出。安全风险：开启期间，SteamOS 中的程序可以以你的用户权限在 Mac 上运行代码。执行器运行在虚拟机进程内并信任客户机；其故障可能使虚拟机停止。"
           }
         }
       }

@@ -30,7 +30,8 @@ Metal 4) is an experimental alternative on macOS 26+ (see “Vulkan driver”).
 ## Building and running
 
 ```sh
-./build.sh          # everything: MoltenVK, virglrenderer, libkrun, launcher, kernel, Mesa, disk
+./build.sh          # Vulkan stack: MoltenVK, virglrenderer, libkrun, launcher, kernel, Mesa, disk
+./build.sh dxmt     # DXMT + wmtr host executor and guest payload; then rebuild layer and launcher (below)
 ./run.sh            # a window with SteamOS
 ```
 
@@ -662,17 +663,71 @@ shader caches. A pipeline the host driver cannot build is a placeholder in virgl
 and dispatches are dropped, the driver never sees `VK_NULL_HANDLE`.
 
 **D3D11 on the Mac's Metal (wmtr), experimental.** Settings → Advanced → **D3D11 on the Mac's Metal
-(wmtr)** (off by default, applies on next start; for one launch `--wmtr-lib PATH` or `--no-wmtr`)
-offers the guest libkrun's wmtr virtio-gpu context type (libkrun patch 0018, capset 30): DXMT's
-winemetal calls run on the Mac's Metal in an executor library inside the VM process instead of in
-the guest. The launcher sets `STEAMAC_WMTR=1` and `STEAMAC_WMTR_LIB` (the library chosen under
-**Executor library**, else `@rpath/libwmtr_host.dylib` from the app's Frameworks or
-`work/out/host/lib`) before the VM starts, and clears both while the setting is off. A library that
-does not load or exports no `wmtr_host_abi_version` turns the context type off for that boot
-(logged and shown in red in Settings; `--wmtr-lib` exits with the reason); libkrun refuses a
-library with another ABI version. Neither an executor nor a guest DXMT that uses it ships yet, so
-the setting is for testing them; a fault in the executor stops the VM. Problem and crash reports
+(wmtr)** is off by default and applies on next start (`--wmtr-lib PATH` or `--no-wmtr` for one launch).
+The app bundles `libwmtr_host.dylib`; the guest layer carries DXMT's
+`{d3d11,dxgi,d3d10core,winemetal}.dll` and `winemetal.so`. With the toggle on, the launcher offers
+libkrun's wmtr virtio-gpu context (patch 0018, capset 30) and boots with `steamac.gfx=dxmt`.
+The guest's `steam-gfx-path` swaps DXMT into every installed x86-64 Proton and watches for Proton
+installs and updates; turning the toggle off boots with `steamac.gfx=vulkan` and restores Proton's
+original files. DXMT's dlls are x86-64 with a Wine unixlib, which only an x86-64 Proton loads (in Proton
+11.0 (ARM64)'s ARM64EC Wine, winemetal's unix side does not come up and games report "could not load
+d3d11.dll"), while this Steam client maps every Windows title to Proton 11.0 (ARM64) (`proton-stable`,
+priority 85). So before Steam starts, `steam-compat-default` gives every installed Windows game (from
+`libraryfolders.vdf` and `appcache/appinfo.vdf`: type game/demo/application, oslist with windows but not
+linux) that has no tool of its own a per-game `CompatToolMapping` entry for **Proton 10.0** at priority 250,
+what Steam writes when a game is set to a tool in its Properties; Steam downloads Proton 10.0 (x86-64,
+run under FEX in Steam Linux Runtime 3.0) when such a game first starts, and `steam-gfx-path --watch` puts
+DXMT into it. Proton Experimental and the x86-64 Proton 11.0 need Steam Linux Runtime 4.0, which the arm64
+client refuses to install ("Invalid platform"). A game installed while Steam runs is switched at the next
+Steam start. The wildcard entry ("0") is never used: Steam applies a high-priority wildcard to its own
+tools as well and emptied the FEX tool that way. Off removes the entries the script added; one the user
+changes in Steam afterwards is left alone. D3D12 games on Proton 10.0 then run their Wine side under FEX
+instead of ARM64EC, which costs CPU time. Measured end to end on an M1 Max: Death's Door (Unity, D3D11)
+starts on Proton 10.0, reports the renderer as "Apple M1 Max" and draws through the executor's layer.
+This is a global selection, not a per-game setting. DXMT's winemetal calls cross virtio-gpu to an
+executor **inside the VM process on the Mac**, which presents a `CAMetalLayer` in the VM view.
+D3D12 (vkd3d-proton) and native Vulkan remain on Venus; this path is for **D3D11/D3D10 only**, not D3D9.
+DXMT still has compatibility gaps, including **no stream output**; expect first-launch shader
+compilation and stutter rather than assuming Steam's Vulkan shader cache covers Metal.
+
+**Security: while this is on, guest programs can run code on the Mac with your user's rights.**
+The in-process executor and DXMT's raw-host-address protocol are not a VM security boundary.
+That is why this path is off by default and experimental; an executor fault can also stop the VM.
+Enable it only for guest software you trust.
+
+Before starting the VM, the launcher sets `STEAMAC_WMTR=1`, `STEAMAC_WMTR_LIB` (the **Executor library**
+override, otherwise `@rpath/libwmtr_host.dylib` from the app's Frameworks or `work/out/host/lib`) and
+`WMTR_PRESENT=overlay`; all three are cleared when off. A missing/unloadable library or missing
+`wmtr_host_abi_version` disables the path for that boot (logged and red in Settings; explicit
+`--wmtr-lib` exits with the reason); libkrun rejects another ABI version. Problem/crash reports
 carry `wmtr on|off`.
+
+**Build DXMT.** On Apple silicon macOS, install Xcode's Metal toolchain
+(`xcodebuild -downloadComponent MetalToolchain`), Rosetta (`softwareupdate --install-rosetta` for the
+x86-64 Wine build tool), Homebrew and Docker/OrbStack with `linux/amd64` support for the client step.
+The script installs `meson ninja cmake pkgconf zstd`. If Metal tools are unavailable,
+`DXMT_PREBUILT_METAL` can name a directory containing `dxmt_command.metallib` and
+`air_{msad,samplepos,tessellation}.air` built from the same pinned sources.
+
+```sh
+host/dxmt/build.sh fetch llvm native host pe client payload  # default steps, in order
+scripts/build-image.sh layer                               # include the guest payload
+host/launcher/build.sh                                     # bundle executor + refreshed layer
+```
+
+`fetch` verifies the pinned DXMT/DirectX-header tarballs and applies `host/dxmt/patches`;
+`llvm` builds static LLVM 15.0.7 (about 10 minutes on an M2, reused while the pin matches).
+`native` builds airconv in `work/build/dxmt-native`; `host` builds/tests/installs the executor to
+`work/out/host/lib/libwmtr_host.dylib`. `pe` cross-builds the four DLLs into `work/out/dxmt-pe`;
+`client` builds/tests `wmtr/build/x86_64-linux/winemetal.so` in Docker; `payload` stages
+`work/out/dxmt/{x86_64-windows,x86_64-unix}` for `/usr/lib/steamac/dxmt/` in the guest layer.
+Steps can be rerun individually; `host/dxmt/build.sh` with no arguments runs them all.
+
+Credits: [StonkGuy](https://github.com/StonkGuy/steamac) for the wmtr remoting path and integration;
+[DXMT by 3Shain (Feifan He)](https://github.com/3Shain/dxmt) for D3D11/D3D10 on Metal.
+The cherry-picked fixes in `host/dxmt/patches` retain their authors: David Grinberg, osy,
+Holly Hamilton, SteveTanSaMa, hanzpo, Mybono, NerRobDog, 时雨 and Jakey-Jakey
+(details in the patched DXMT `STEAMAC-README.md`).
 
 Every host-visible guest allocation is a POSIX shm whose file descriptors stay open in the VM
 process (about four per mapped allocation), and a Finder launch starts with a soft limit of 256
@@ -990,6 +1045,8 @@ then it closes on its own; `STEAMAC_REPORT_TEST_SEND=1` also sends a test report
 |---|---|
 | `host/moltenvk/` | MoltenVK utmapp `geometry-shaders` @05604465 + patches: depth_clip_enable, YCbCr arrays, null descriptors, geometry shader emulation for zink/DXVK (vertex stride, instancing, adjacency, fans, SCALED formats, `gl_in`), transform feedback (DXVK stream output) and its queries (SO statistics), query result availability on copy (DXVK occlusion queries via Venus), atomics on vector components at buffer addresses (BDA, vkd3d-proton), texel buffers with offsets at any texel (vkd3d-proton), writes to small push-descriptor buffers with robustness2, variable-count descriptor arrays as runtime arrays (Metal kept 32 MB per vkd3d-proton heap array and program), allocation of auxiliary buffers, deferred release of Metal resources, patch hash in the pipeline cache UUID, `VK_NULL_HANDLE` descriptor sets in binds, fragment outputs converted to their color attachment's numeric type, zeros for vertex shader inputs without a vertex attribute, integer vertex inputs read through float formats, null-checked YCbCr helper samplers, unsupported texel buffer formats rejected; tests in `repro/` run under Metal validation (also on KosmicKrisp: `REPRO_DRIVER=kosmickrisp`); `bench/run.sh <libdir>…` compares performance of changes between builds; `bench/shaders.sh <dump or pack>` measures a game's shader compilation (SPIR-V → MSL, MSL → Metal library, pipeline states; cold/warm, threads) from a MoltenVK shader dump or a 10% sample made with `bench/pack.py` |
 | `host/kosmickrisp/` | KosmicKrisp (Mesa main @ce576c29) + open Mesa MRs and steamac patches (see “Vulkan driver”), built without LLVM at runtime (`-Dllvm=disabled`, `mesa_clc` from a first build), `-Db_ndebug=true`; macOS 26+ only |
+| `host/dxmt/` | Pinned DXMT + patches, static LLVM 15, native airconv, Windows DLL cross-build and guest payload; `build.sh fetch llvm native host pe client payload` |
+| `wmtr/` | BSD-3-Clause winemetal remoting: guest `winemetal.so` over virtio-gpu to `libwmtr_host.dylib` (DXMT/LLVM linked in), presenting a CAMetalLayer inside the VM view |
 | `host/libepoxy/` | libepoxy 1.5.10, upstream macOS Meson options, built for macOS 15.0 instead of copying a Homebrew bottle |
 | `host/virglrenderer/` | virglrenderer UTM `macos-next` + merge with upstream main (venus-protocol 1.1.3) + LINEAR modifier, shm import as host memory, stubs for failed pipelines (draws dropped in virglrenderer), recreation of rejected cache, deferred shm unmap, thread QoS, Vulkan driver opened at runtime (`VKR_VULKAN_DRIVER`) |
 | `host/libkrun/` | libkrun v1.19.6 + patches: `VIRTIO_GPU_F_BLOB_ALIGNMENT` (16K), SME mask for M4, 2D resources without virgl, `SET_SCANOUT_BLOB`, SHM blob mapping, Venus fence signaling, virglrenderer logs, `krun_display_resize` (resolution changes on the fly), vCPU/GPU thread QoS |

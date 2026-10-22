@@ -101,7 +101,7 @@ final class VMView: NSView {
             self.hudAttached = true
             // "default" first, so that "off" is a change.
             self.metalLayer.developerHUDProperties = ["mode": "default"]
-            if !self.metalHUD { self.metalLayer.developerHUDProperties = ["mode": "off"] }
+            Self.applyHUD(self.metalHUD, gameVisible: self.gameLayersVisible, main: self.metalLayer, mainAttached: true)
         }
     }
 
@@ -148,13 +148,42 @@ final class VMView: NSView {
     /// `flushedAt`: the guest flush time of a new frame (perf stats), 0 for a plain redraw.
     func redraw(flushedAt: CFTimeInterval = 0) { renderer.draw(to: metalLayer, flushedAt: flushedAt) }
 
+    /// Remoted game layers (wmtr with WMTR_PRESENT=overlay) cover the guest picture only while a
+    /// game has the guest's focus, leaving Steam and the desktop visible otherwise. The executor
+    /// reads this through KVC for layers added later and re-applies it after their first presents.
+    @objc dynamic var gameLayersVisible = false {
+        didSet {
+            Self.applyGameLayers(visible: gameLayersVisible, in: metalLayer)
+            Self.applyHUD(metalHUD, gameVisible: gameLayersVisible, main: metalLayer, mainAttached: hudAttached)
+        }
+    }
+
+    static func applyGameLayers(visible: Bool, in parent: CALayer) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for layer in parent.sublayers ?? [] where layer is CAMetalLayer { layer.isHidden = !visible }
+        CATransaction.commit()
+    }
+
     /// Metal Performance HUD shown (WindowController). libMTLHud attaches to the layer once a
     /// drawable has reached the screen, starts shown (MTL_HUD_ENABLED) and then acts only on
-    /// changes of developerHUDProperties["mode"]; the setting applies from then on.
-    var metalHUD = false {
-        didSet { if hudAttached { metalLayer.developerHUDProperties = ["mode": metalHUD ? "default" : "off"] } }
+    /// changes of developerHUDProperties["mode"]; the setting applies from then on. The executor
+    /// can re-apply this policy through KVC when its game layer starts presenting.
+    @objc dynamic var metalHUD = false {
+        didSet { Self.applyHUD(metalHUD, gameVisible: gameLayersVisible, main: metalLayer, mainAttached: hudAttached) }
     }
     private var hudAttached = false
+
+    /// Keep the HUD on the game layers while shown, otherwise on the guest picture. Game layers
+    /// get "default" first so "off" is a change even when libMTLHud attached with its HUD showing.
+    static func applyHUD(_ on: Bool, gameVisible: Bool, main: CAMetalLayer, mainAttached: Bool) {
+        let onGame = on && gameVisible && (main.sublayers?.contains { $0 is CAMetalLayer } ?? false)
+        if mainAttached { main.developerHUDProperties = ["mode": on && !onGame ? "default" : "off"] }
+        for case let layer as CAMetalLayer in main.sublayers ?? [] {
+            layer.developerHUDProperties = ["mode": "default"]
+            if !onGame { layer.developerHUDProperties = ["mode": "off"] }
+        }
+    }
 
     /// The guest picture's rect in view points (same fit as the renderer).
     var fitRect: CGRect {

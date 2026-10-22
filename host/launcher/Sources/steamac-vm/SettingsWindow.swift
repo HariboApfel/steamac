@@ -1069,12 +1069,14 @@ private struct AdvancedTab: View {
             Section {
                 Toggle(isOn: $settings.wmtr) {
                     Label2(title: "D3D11 on the Mac's Metal (wmtr)",
-                           detail: String(localized: "Offers SteamOS the wmtr GPU channel, through which DXMT can run a D3D11 game's Metal calls on the Mac instead of in the VM. Needs an executor library on the Mac and a DXMT build in SteamOS that uses it; neither ships with the launcher yet. The library runs inside the VM process: a fault in it stops the VM."),
+                           detail: String(localized: "When on, installed Windows games without a compatibility tool of their own run on Proton 10.0 (x86-64; Steam downloads it the first time) instead of Proton 11.0 (ARM64), and their D3D11 and D3D10 draw through DXMT directly with the Mac's Metal. D3D12 and Vulkan stay on the usual Vulkan path, emulated a little more. A game installed while Steam runs switches at Steam's next start. Switching off restores Proton's own files and the games' tools. DXMT has compatibility gaps, including no D3D11 stream output. Security risk: while on, programs in SteamOS can run code on the Mac with your user's rights. The executor runs inside the VM process and trusts the guest; a fault can stop the VM."),
                            now: false, key: .wmtr, experimental: true)
                 }
                 if settings.wmtr {
                     VStack(alignment: .leading, spacing: 6) {
-                        Label2(title: "Executor library", now: false, key: .wmtrLibrary)
+                        Label2(title: "Executor library",
+                               detail: String(localized: "The bundled libwmtr_host.dylib runs DXMT's Metal calls on the Mac. Choose another executor library only if you trust it."),
+                               now: false, key: .wmtrLibrary)
                         HStack {
                             Text(verbatim: wmtrStatus.0)
                                 .font(.callout).foregroundStyle(wmtrStatus.1 ? Color.secondary : Color.red)

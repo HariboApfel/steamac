@@ -108,7 +108,8 @@ done
 	RUSTFLAGS="-L native=$out/lib -C link-args=-Wl,-rpath,$out/lib" \
 		cargo test -q --features snd --test macos_audio
 	# wmtr context type against a stand-in executor (fence order per ring, the WAITs of each
-	# EXECBUFFER, blob limits, host ABI version, executor start and teardown, command checks).
+	# EXECBUFFER, blob limits and detach/reuse/footprint, host ABI version, executor start and
+	# teardown, command checks).
 	cd ../rutabaga_gfx
 	cargo test -q --lib -- wmtr
 )

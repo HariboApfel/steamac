@@ -57,6 +57,7 @@ struct Options {
     var lanRemotePlay = false
     var selftestRemotePlay = false
     var selftestPointer = false
+    var selftestGameLayers = false
     var sound = true
     var sshPort = 2222
     /// Steam client of this boot (kernel cmdline `steamac.steam_client=`).
@@ -273,6 +274,7 @@ struct Options {
       --selftest-metal-cache reproduce an inaccessible Metal module cache and verify startup recovery
       --selftest-pointer   host pointer -> guest cursor mapping (Retina on/off, window vs scanout size,
                            full-screen letterbox, MetalFX, the guest's focused surface from focus lines)
+      --selftest-game-layers verify game layer visibility and the Metal HUD's game/picture policy
       --resize-selftest S  S seconds after Steam is ready, resize the window 1600x1000 -> fullscreen ->
                            windowed -> 1280x800, wait for the guest's new scanout each time and dump
                            frames to <--frame-dump>-resize-N-*.png
@@ -409,6 +411,7 @@ struct Options {
             case "--selftest-provision": o.selftestProvision = true
             case "--selftest-metal-cache": o.selftestMetalCache = true
             case "--selftest-pointer": o.selftestPointer = true
+            case "--selftest-game-layers": o.selftestGameLayers = true
             case "--reference-disk": o.referenceDisk = try value(a)
             case "--create-disk": o.createDisk = try value(a)
             case "--grow-disk": o.growDisk = try value(a)
@@ -450,7 +453,7 @@ struct Options {
 
     var isSelftest: Bool {
         selftestDisplay || selftestOverlay || selftestStall || selftestPill || selftestSettings || selftestProvision || selftestRemotePlay
-            || selftestMetalCache || selftestPointer || createDisk != nil || growDisk != nil
+            || selftestMetalCache || selftestPointer || selftestGameLayers || createDisk != nil || growDisk != nil
             || showSSHPassword != nil
     }
 
@@ -482,6 +485,7 @@ struct Options {
             }
             add("steamac.ssh", o.sshPort == 0 ? "0" : "1")
             add("steamac.steam_client", o.steamClient.rawValue)
+            add("steamac.gfx", o.wmtrLibrary == nil ? "vulkan" : "dxmt")
             add("steamac.gpu_mib", String(VMSizing.gpuBudgetMiB(memMiB: o.memMiB)))
             if o.macTime {
                 add("steamac.tz", MacTime.zone)

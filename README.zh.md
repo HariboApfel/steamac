@@ -30,7 +30,8 @@ Metal 4 上的 Vulkan 驱动）是 macOS 26+ 上的实验性替代（见“Vulka
 ## 构建与运行
 
 ```sh
-./build.sh          # 全部：MoltenVK、virglrenderer、libkrun、启动器、内核、Mesa、磁盘
+./build.sh          # Vulkan 栈：MoltenVK、virglrenderer、libkrun、启动器、内核、Mesa、磁盘
+./build.sh dxmt     # DXMT + wmtr 宿主执行器和客户机载荷；随后重建层与启动器（见下文）
 ./run.sh            # 一扇通往 SteamOS 的窗口
 ```
 
@@ -471,7 +472,67 @@ Metal 初始化前，启动器检查运行时编译器的模块缓存是否可�
 
 切换改变 Venus 驱动身份（管线缓存 UUID），Steam 与游戏重建着色器缓存。宿主驱动建不出的管线在 virglrenderer 中是占位：其绘制与派发被丢弃，驱动永远见不到 `VK_NULL_HANDLE`。
 
-**在 Mac 的 Metal 上运行 D3D11（wmtr），实验性。** 设置 → 高级 → **在 Mac 的 Metal 上运行 D3D11（wmtr）**（默认关闭，下次启动生效；单次启动用 `--wmtr-lib PATH` 或 `--no-wmtr`）为客户机提供 libkrun 的 wmtr virtio-gpu 上下文类型（libkrun 补丁 0018，capset 30）：DXMT 的 winemetal 调用由虚拟机进程内的执行器库在 Mac 的 Metal 上执行，而不是在客户机内。虚拟机启动前，启动器设置 `STEAMAC_WMTR=1` 与 `STEAMAC_WMTR_LIB`（**执行器库**中选择的库，否则为应用 Frameworks 或 `work/out/host/lib` 中的 `@rpath/libwmtr_host.dylib`），设置关闭时清除两者。库无法加载或未导出 `wmtr_host_abi_version` 时，本次启动不提供该上下文类型（记入日志并在设置中以红色显示；使用 `--wmtr-lib` 时启动器带原因退出）；ABI 版本不同的库由 libkrun 拒绝。执行器与使用它的客户机 DXMT 目前都不随附，此设置用于测试它们；执行器中的故障会使虚拟机停止。问题报告与崩溃报告带 `wmtr on|off`。
+**在 Mac 的 Metal 上运行 D3D11（wmtr），实验性。** 设置 → 高级 → **在 Mac 的 Metal 上运行
+D3D11（wmtr）**默认关闭，下次启动生效（单次启动用 `--wmtr-lib PATH` 或 `--no-wmtr`）。
+应用捆绑 `libwmtr_host.dylib`；客户机层包含 DXMT 的
+`{d3d11,dxgi,d3d10core,winemetal}.dll` 与 `winemetal.so`。开启时，启动器提供 libkrun 的
+wmtr virtio-gpu 上下文（补丁 0018，capset 30），并以 `steamac.gfx=dxmt` 启动虚拟机。
+客户机的 `steam-gfx-path` 将每个已安装的 x86-64 Proton 的库替换为 DXMT，并监视 Proton
+的安装与更新；关闭后以 `steamac.gfx=vulkan` 启动并恢复 Proton 原始文件。DXMT 的 dll 是带 Wine unixlib 的
+x86-64 版本，只有 x86-64 Proton 能加载（在 Proton 11.0 (ARM64) 的 ARM64EC Wine 中，winemetal 的 unix 部分无法启动，游戏报告
+“could not load d3d11.dll”），而此 Steam 客户端把所有 Windows 游戏映射到 Proton 11.0 (ARM64)（`proton-stable`，优先级 85）。
+因此在 Steam 启动前，`steam-compat-default` 为每个没有自选工具的已安装 Windows 游戏（依据 `libraryfolders.vdf` 与
+`appcache/appinfo.vdf`：类型为 game/demo/application，oslist 含 windows 不含 linux）写入单独的 `CompatToolMapping`
+条目，指向 **Proton 10.0**，优先级 250，与在游戏属性中选择工具时 Steam 写入的相同。Steam 在此类游戏首次启动时下载
+Proton 10.0（x86-64，在 Steam Linux Runtime 3.0 中经 FEX 运行），`steam-gfx-path --watch` 随后放入 DXMT。Proton Experimental
+与 x86-64 Proton 11.0 需要 Steam Linux Runtime 4.0，arm64 客户端拒绝安装（“Invalid platform”）。Steam 运行期间安装的游戏
+在下次 Steam 启动时切换。从不使用通配条目（“0”）：Steam 也会把高优先级通配应用到自身工具上，曾因此清空 FEX 工具。
+关闭时删除脚本添加的条目；用户之后在 Steam 中修改的条目保持不变。Proton 10.0 上的 D3D12 游戏的 Wine 部分改在 FEX 下而非
+ARM64EC 运行，会消耗更多 CPU。已在 M1 Max 上端到端验证：Death's Door（Unity，D3D11）在 Proton 10.0 上启动，渲染器显示
+“Apple M1 Max”，并经执行器的图层绘制。这是全局选择，而非按游戏设置。
+DXMT 的 winemetal 调用通过 virtio-gpu 到达 **Mac 上虚拟机进程内部**的执行器，
+由其在虚拟机视图内呈现 `CAMetalLayer`。D3D12（vkd3d-proton）和原生 Vulkan 仍走 Venus；
+此路径**仅支持 D3D11/D3D10**，不支持 D3D9。DXMT 仍有兼容性缺口，包括**不支持流输出
+（stream output）**；首次启动会编译着色器并可能卡顿，不能假定 Steam 的 Vulkan 着色器缓存覆盖 Metal。
+
+**安全：开启期间，客户机程序可以以您的用户权限在 Mac 上执行代码。**
+进程内执行器与 DXMT 使用宿主原始地址的协议并不是虚拟机安全边界。
+因此该路径默认关闭且属实验性；执行器故障也可能使虚拟机停止。仅为您信任的客户机软件启用。
+
+虚拟机启动前，启动器设置 `STEAMAC_WMTR=1`、`STEAMAC_WMTR_LIB`（**执行器库**覆盖项，
+否则为应用 Frameworks 或 `work/out/host/lib` 中的 `@rpath/libwmtr_host.dylib`）及
+`WMTR_PRESENT=overlay`；关闭时清除三者。库缺失、无法加载或未导出
+`wmtr_host_abi_version` 时，本次启动禁用该路径（记入日志并在设置中以红色显示；
+显式 `--wmtr-lib` 会带原因退出）；其他 ABI 版本由 libkrun 拒绝。
+问题/崩溃报告携带 `wmtr on|off`。
+
+**构建 DXMT。** 在 Apple silicon macOS 上安装 Xcode 的 Metal 工具链
+（`xcodebuild -downloadComponent MetalToolchain`）、Rosetta（`softwareupdate --install-rosetta`，
+用于 x86-64 Wine 构建工具）、Homebrew，以及为 client 步骤提供 `linux/amd64` 支持的
+Docker/OrbStack。脚本安装 `meson ninja cmake pkgconf zstd`。没有 Metal 工具时，
+可将 `DXMT_PREBUILT_METAL` 指向包含由相同锁定源码构建的 `dxmt_command.metallib` 和
+`air_{msad,samplepos,tessellation}.air` 的目录。
+
+```sh
+host/dxmt/build.sh fetch llvm native host pe client payload  # 默认步骤，按顺序执行
+scripts/build-image.sh layer                               # 纳入客户机载荷
+host/launcher/build.sh                                     # 捆绑执行器与更新后的层
+```
+
+`fetch` 校验锁定的 DXMT/DirectX 头文件压缩包并应用 `host/dxmt/patches`；
+`llvm` 构建静态 LLVM 15.0.7（M2 上约 10 分钟，锁定版本未变时复用）。
+`native` 在 `work/build/dxmt-native` 构建 airconv；`host` 构建/测试执行器并安装到
+`work/out/host/lib/libwmtr_host.dylib`。`pe` 将四个 DLL 交叉编译到 `work/out/dxmt-pe`；
+`client` 在 Docker 内构建/测试 `wmtr/build/x86_64-linux/winemetal.so`；
+`payload` 将两者放到 `work/out/dxmt/{x86_64-windows,x86_64-unix}`，
+供客户机层的 `/usr/lib/steamac/dxmt/` 使用。各步骤可单独重跑；无参数的
+`host/dxmt/build.sh` 会执行全部步骤。
+
+致谢：[StonkGuy](https://github.com/StonkGuy/steamac) 提供 wmtr 远程调用路径及集成；
+[3Shain（Feifan He）的 DXMT](https://github.com/3Shain/dxmt) 提供 Metal 上的 D3D11/D3D10。
+`host/dxmt/patches` 中选取的修复保留其作者：David Grinberg、osy、Holly Hamilton、
+SteveTanSaMa、hanzpo、Mybono、NerRobDog、时雨与 Jakey-Jakey
+（详见打补丁后的 DXMT `STEAMAC-README.md`）。
 
 每个宿主可见客户机分配都是一块 POSIX shm，其文件描述符在虚拟机进程中保持打开（每映射分配约四个），访达启动的进程软限制 256 个描述符：几十个此类分配后游戏丢失 GPU 上下文（STEAMAC-G、Left 4 Dead
 2）。虚拟机进程启动时把软限制提到 `kern.maxfilesperproc`（记为“file
@@ -707,6 +768,8 @@ Worker URL 填入 `host/launcher/Info.plist`（`SteamacGameStatsURL`）与 `docs
 |---|---|
 | `host/moltenvk/` | MoltenVK utmapp `geometry-shaders` @05604465 + 补丁：depth_clip_enable、YCbCr 数组、null 描述符、zink/DXVK 用几何着色器模拟（顶点步长、实例化、邻接、扇、SCALED 格式、`gl_in`）、transform feedback（DXVK 流输出）与其查询（SO 统计）、拷贝时查询结果可用（经 Venus 的 DXVK 遮挡查询）、缓冲地址向量分量原子（BDA，vkd3d-proton）、任意 texel 偏移 texel 缓冲（vkd3d-proton）、robustness2 小推导描述符缓冲写入、可变计数描述符数组做运行时数组（Metal 给 vkd3d-proton 每堆数组留 32 MB 与程序）、辅助缓冲分配、Metal 资源延迟释放、管线缓存 UUID 中补丁哈希、绑定中的 `VK_NULL_HANDLE` 描述符集、片元输出转换为颜色附件的数值类型、没有顶点属性的顶点着色器输入读取零、经浮点格式读取整数顶点输入、辅助函数中 YCbCr 采样器的 null 检查、拒绝不支持的 texel buffer 格式；`repro/` 测试跑在 Metal validation 下（KosmicKrisp 也可：`REPRO_DRIVER=kosmickrisp`）；`bench/run.sh <libdir>…` 比较构建间性能；`bench/shaders.sh <dump or pack>` 从 MoltenVK 着色器转储或 `bench/pack.py` 制作的 10% 采样度量游戏着色器编译（SPIR-V → MSL、MSL → Metal 库、管线状态；冷/热、多线程） |
 | `host/kosmickrisp/` | KosmicKrisp（Mesa 主线 @ce576c29）+ 未合并 Mesa MR 与 steamac 补丁（见“Vulkan 驱动”），运行时无 LLVM（`-Dllvm=disabled`，`mesa_clc` 来自首构建），`-Db_ndebug=true`；仅 macOS 26+ |
+| `host/dxmt/` | 锁定的 DXMT + 补丁、静态 LLVM 15、原生 airconv、Windows DLL 交叉编译与客户机载荷；`build.sh fetch llvm native host pe client payload` |
+| `wmtr/` | BSD-3-Clause 的 winemetal 远程调用：客户机 `winemetal.so` 经 virtio-gpu 到达 `libwmtr_host.dylib`（链接 DXMT/LLVM），在虚拟机视图中呈现 CAMetalLayer |
 | `host/libepoxy/` | libepoxy 1.5.10，上游 macOS Meson 选项，为 macOS 15.0 而非拷贝 Homebrew 瓶构建 |
 | `host/virglrenderer/` | virglrenderer UTM `macos-next` + 合并上游主线（venus-protocol 1.1.3）+ LINEAR 修饰符、shm 按宿主内存导入、失败管线桩（virglrenderer 中丢弃绘制）、拒绝缓存重建、延迟 shm 解映射、线程 QoS、运行时打开 Vulkan 驱动（`VKR_VULKAN_DRIVER`） |
 | `host/libkrun/` | libkrun v1.19.6 + 补丁：`VIRTIO_GPU_F_BLOB_ALIGNMENT`（16K）、M4 SME 掩码、无 virgl 的 2D 资源、`SET_SCANOUT_BLOB`、SHM blob 映射、Venus fence 信令、virglrenderer 日志、`krun_display_resize`（运行时改分辨率）、vCPU/GPU 线程 QoS |
