@@ -43,7 +43,9 @@
 # 10. vertex_input.c: vertex input layouts Metal's always-on vertex descriptor validation aborts on (zero
 #    strides, static/dynamic/per instance/zero divisor, attributes past the stride, attributes of undescribed
 #    bindings, with and without geometry shader emulation), one process per case; points check the
-#    elements read; a shader input without a vertex attribute (STEAMAC-2Y: Metal failed the pipeline) reads zeros.
+#    elements read; a shader input without a vertex attribute (STEAMAC-2Y: Metal failed the pipeline) reads zeros;
+#    packed vertex formats (10-10-10-2, RG11B10F, RGB9E5, BGRA8) through geometry shader emulation read their values
+#    (American Truck Simulator's 2_10_10_10 normals failed pipeline creation under zink's provoking-vertex geometry shader).
 # 11. device_address.c: atomics on vector components behind buffer device addresses (vkd3d-proton's
 #    scalar-layout uvec3 counter, std430 uvec4 with a dynamic component, ivec2), values read back.
 # 12. queries.c: occlusion query results copied from a later command buffer, one copy per query with

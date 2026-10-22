@@ -3,9 +3,9 @@
 # Read-only erofs image; its usr/ becomes the top lowerdir of the guest /usr
 # overlay (lowerdir=<layer>/usr:<rootfs>/usr), see guest/initramfs/init.
 # Contents: guest/layer/usr (steamac files) + work/out/mesa-venus/usr (Venus
-# ICDs and the x86_64 fault reporter from guest/mesa; required unless
-# ALLOW_NO_VENUS=1) + the fx-progress-agent binary built by step 25 from
-# guest/progress-agent.
+# ICDs, the patched zink GL stack and the x86_64 fault reporter from
+# guest/mesa; required unless ALLOW_NO_VENUS=1) + the fx-progress-agent binary
+# built by step 25 from guest/progress-agent.
 set -euo pipefail
 . /src/scripts/config.env
 

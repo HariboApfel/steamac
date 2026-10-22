@@ -740,12 +740,15 @@ Worker URL 填入 `host/launcher/Info.plist`（`SteamacGameStatsURL`）与 `docs
   Simulator `game.log.txt` 最近 512 KiB。ATS 模拟器崩溃请将其 Steam 启动选项设为
   `FEX_SILENTLOG=0 FEX_OUTPUTLOG=/home/steamos/fex-amtrucks.log %command%`，复现后报告；
   收集器收录该日志最近 512 KiB。事后移除启动选项。
-  FEX 从 JIT 代码重抛模拟游戏的崩溃，core 堆栈只有匿名 AArch64 地址。要记录 x86_64 代码 fault 位置，把游戏启动选项设为
-  `LD_PRELOAD=/usr/lib/steamac/x86_64/fault-report.so:$LD_PRELOAD %command%`，复现后报告。
+  FEX 从 JIT 代码重抛模拟游戏的崩溃，core 堆栈只有匿名 AArch64 地址。要记录 x86_64 代码 fault 位置，创建
+  `~/.local/share/Steam/steamapps/compatdata/<appid>/fex-emu/AppConfig/<可执行文件>.json`（ATS：
+  `270880/fex-emu/AppConfig/amtrucks.json`），内容为
+  `{"Config":{"Env":"LD_PRELOAD=/usr/lib/steamac/x86_64/fault-report.so"}}`，复现后报告。
+  Steam 启动选项做不到：FEX 的 compat tool 会从环境中移除 `LD_PRELOAD`。
   SIGSEGV/SIGBUS/SIGILL/SIGFPE/SIGABRT 时该库把 x86_64 RIP、fault 地址、
   寄存器、每帧模块与偏移的回溯与内存映射写入
   `~/.local/state/steamac/fault-report.txt`。文件不超过 256 KiB，报告以
-  `fex/fault-report.txt` 收录。之后游戏自家处理器或默认动作照常，崩溃与其 core dump 不变。不加启动选项则库永不加载。
+  `fex/fault-report.txt` 收录。之后游戏自家处理器或默认动作照常，崩溃与其 core dump 不变。没有该文件则库永不加载；事后删除它。
   完整崩溃元数据由 root 钩子仅导出给 `steamos`（root 所有，0640 模式）；
   原始 core 保持私密从不附加。`coredump-pending.txt` 标识仍在生成的转储：
   报告不等它们；完成后另发一份报告。命名空间感知堆栈提取在有符号处解析 pressure-vessel 库（FEX JIT 代码可能仍无符号）。Core 处理限制不降低：超大 core 会丢回溯，`Storage=none` 仍写完整临时 core。Steam ID（`[U:1:…]`、
@@ -777,7 +780,7 @@ Worker URL 填入 `host/launcher/Info.plist`（`SteamacGameStatsURL`）与 `docs
 
 | 目录 | 内容 |
 |---|---|
-| `host/moltenvk/` | MoltenVK utmapp `geometry-shaders` @05604465 + 补丁：depth_clip_enable、YCbCr 数组、null 描述符、zink/DXVK 用几何着色器模拟（顶点步长、实例化、邻接、扇、SCALED 格式、`gl_in`）、transform feedback（DXVK 流输出）与其查询（SO 统计）、拷贝时查询结果可用（经 Venus 的 DXVK 遮挡查询）、缓冲地址向量分量原子（BDA，vkd3d-proton）、任意 texel 偏移 texel 缓冲（vkd3d-proton）、robustness2 小推导描述符缓冲写入、可变计数描述符数组做运行时数组（Metal 给 vkd3d-proton 每堆数组留 32 MB 与程序）、辅助缓冲分配、Metal 资源延迟释放、管线缓存 UUID 中补丁哈希、绑定中的 `VK_NULL_HANDLE` 描述符集、片元输出转换为颜色附件的数值类型、没有顶点属性的顶点着色器输入读取零、经浮点格式读取整数顶点输入、辅助函数中 YCbCr 采样器的 null 检查、拒绝不支持的 texel buffer 格式；`repro/` 测试跑在 Metal validation 下（KosmicKrisp 也可：`REPRO_DRIVER=kosmickrisp`）；`bench/run.sh <libdir>…` 比较构建间性能；`bench/shaders.sh <dump or pack>` 从 MoltenVK 着色器转储或 `bench/pack.py` 制作的 10% 采样度量游戏着色器编译（SPIR-V → MSL、MSL → Metal 库、管线状态；冷/热、多线程） |
+| `host/moltenvk/` | MoltenVK utmapp `geometry-shaders` @05604465 + 补丁：depth_clip_enable、YCbCr 数组、null 描述符、zink/DXVK 用几何着色器模拟（顶点步长、实例化、邻接、扇、SCALED 格式、打包顶点格式：10-10-10-2、RG11B10F、RGB9E5、BGRA8、`gl_in`）、transform feedback（DXVK 流输出）与其查询（SO 统计）、拷贝时查询结果可用（经 Venus 的 DXVK 遮挡查询）、缓冲地址向量分量原子（BDA，vkd3d-proton）、任意 texel 偏移 texel 缓冲（vkd3d-proton）、robustness2 小推导描述符缓冲写入、可变计数描述符数组做运行时数组（Metal 给 vkd3d-proton 每堆数组留 32 MB 与程序）、辅助缓冲分配、Metal 资源延迟释放、管线缓存 UUID 中补丁哈希、绑定中的 `VK_NULL_HANDLE` 描述符集、片元输出转换为颜色附件的数值类型、没有顶点属性的顶点着色器输入读取零、经浮点格式读取整数顶点输入、辅助函数中 YCbCr 采样器的 null 检查、拒绝不支持的 texel buffer 格式；`repro/` 测试跑在 Metal validation 下（KosmicKrisp 也可：`REPRO_DRIVER=kosmickrisp`）；`bench/run.sh <libdir>…` 比较构建间性能；`bench/shaders.sh <dump or pack>` 从 MoltenVK 着色器转储或 `bench/pack.py` 制作的 10% 采样度量游戏着色器编译（SPIR-V → MSL、MSL → Metal 库、管线状态；冷/热、多线程） |
 | `host/kosmickrisp/` | KosmicKrisp（Mesa 主线 @ce576c29）+ 未合并 Mesa MR 与 steamac 补丁（见“Vulkan 驱动”），运行时无 LLVM（`-Dllvm=disabled`，`mesa_clc` 来自首构建），`-Db_ndebug=true`；仅 macOS 26+ |
 | `host/dxmt/` | 锁定的 DXMT + 补丁、静态 LLVM 15、原生 airconv、Windows DLL 交叉编译与客户机载荷；`build.sh fetch llvm native host pe client payload` |
 | `wmtr/` | BSD-3-Clause 的 winemetal 远程调用：客户机 `winemetal.so` 经 virtio-gpu 到达 `libwmtr_host.dylib`（链接 DXMT/LLVM），在虚拟机视图中呈现 CAMetalLayer |
@@ -786,7 +789,7 @@ Worker URL 填入 `host/launcher/Info.plist`（`SteamacGameStatsURL`）与 `docs
 | `host/libkrun/` | libkrun v1.19.6 + 补丁：`VIRTIO_GPU_F_BLOB_ALIGNMENT`（16K）、M4 SME 掩码、无 virgl 的 2D 资源、`SET_SCANOUT_BLOB`、SHM blob 映射、Venus fence 信令、virglrenderer 日志、`krun_display_resize`（运行时改分辨率）、vCPU/GPU 线程 QoS |
 | `host/launcher/` | `steamac-vm`（Swift/AppKit）：Metal 窗口（可选 MetalFX 超分辨率）、带开关机进度的“FX STEAM LAUNCHER”覆盖层、客户机分辨率 = 窗口大小（Retina 分辨率下 × 屏幕 backing scale）恒定 DPI（EDID 取自屏幕物理尺寸）、键盘/鼠标/平板、GameController.framework 的客户机 Xbox 360 / DualSense / DualShock 4 手柄带振动或 DualSense 裸 HID 直通（`fx.pad`）、gvproxy 网络、客户机重启则虚拟机重启、`--perf-stats` |
 | `guest/kernel/` | Linux 7.2.9，全编入，4K 页，16K blob 节点对齐，FEX 用 Apple TSO；直通 DualSense 用的 uhid、hidraw 与 `hid-playstation`（含其所需 LED 类） |
-| `guest/mesa/` | Venus ICD aarch64 版（Proton、gamescope、zink）与 x86_64/i386 版（FEX 图形提供方）；模拟游戏 x86_64 fault 上报器（`/usr/lib/steamac/x86_64/fault-report.so`） |
+| `guest/mesa/` | 来自锁定的 Mesa：Venus ICD aarch64 版（Proton、gamescope、zink）与 x86_64/i386 版（FEX 图形提供方）；两者中替换原装的 zink GL 栈（libgallium、GLX/EGL/GBM），带 `guest/mesa/patches/` 中的回移植（Mesa 6abefa51：仅顶点布局变化时 zink 也重建管线；Metal 上的 Venus 缺 `VK_EXT_vertex_input_dynamic_state`，否则 GL 游戏会用过时的顶点格式绘制）；模拟游戏 x86_64 fault 上报器（`/usr/lib/steamac/x86_64/fault-report.so`） |
 | `guest/initramfs/` | 启动阶段 = “bootloader”：带尝试计数的 A/B 槽选择、partsets、`/etc` 与 `/usr` 覆盖；启动器创建磁盘的初始预配（`steamac.provision=1`：initramfs 中静态 mkfs.fat、mke2fs、btrfstune）；`steamac.ssh=0`——无 SSH 服务器；启动器配置载荷（`steamac.config=1`）——新 `steamos` 密码；`steamac.tz=`——`/etc/localtime` 中的 Mac 时区；Flatpak 沙箱用 untouched procfs `/run/steamac/proc` |
 | `guest/layer/` | `/usr` 上虚拟机层（只读 erofs）：文件化 `splctl`、RAUC 安全 post-install、`VARIANT_ID=steamdeck`、DRM 上 gamescope 会话、桌面模式（gamescope 嵌套 Plasma）、Frame 硬件服务屏蔽、`fx-progress-agent` 进度代理（Rust，`guest/progress-agent/`，`fx.progress` virtio-console 端口）与其 root 服务（`fx.clock`、`fx.sleep`、`fx.pad` 上 uinput 或 uhid 手柄）、短关机超时、二维码 Steam 登录模式（无记住账号时用 Steam Deck 客户端）、可选 Steam 客户端分支（`/etc/steamac/steam-client-branch`）、Steam Shader Pre-Caching 默认关闭（`steam-shader-defaults`） |
 | `scripts/` | 构建 `work/out/steamos.img`：Valve 分区布局的 GPT（esp、efi-A/B、rootfs-A/B、var-A/B、home）；`scripts/test/provision-test-disk.sh`——对照 Docker 磁盘的预配开发测试；`scripts/test/vkd3d-tiled.sh`——在临时虚拟机中端到端检查 D3D12 平铺资源与功能级别（Proton 11.0 的 vkd3d-proton 测试、`d3d12-caps`、`vk-minmax`） |
@@ -845,7 +848,9 @@ SteamOS 根文件系统不动：所有改动来自 initramfs 与层。因此
 - Steam 登录、Proton 11.0-2（ARM64）与 FEX 安装、DX11 游戏（Death's Door）
   经 DXVK → Venus → MoltenVK 运行；
 - 客户机分辨率恒定 DPI 跟随窗口大小；快速关机（2–4 秒）；
-- Heroes of Might and Magic: Olden Era（Unity，DX11）——7 分钟无错误（离线测试）。
+- Heroes of Might and Magic: Olden Era（Unity，DX11）——7 分钟无错误（离线测试）；
+- American Truck Simulator（FEX 下的原生 Linux x86_64，经 zink 的 OpenGL 4.6 core）——生涯可加载，
+  KosmicKrisp 与 MoltenVK 上世界均正常渲染。
 
 首遍卡顿是 Metal 编译（每新管线约 50–100 ms）；之后约 1 ms。异常关机后重启，initramfs 检查并修复 esp/efi 的 FAT。
 

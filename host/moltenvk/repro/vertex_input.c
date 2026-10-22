@@ -30,6 +30,12 @@
  *   uint_int / int_uint    signedness mismatches, including high-bit values, bits preserved on fetch
  *   uint_float / int_float integer vertex formats with floating-point shader inputs, fetched bits preserved
  *   float_int_array        flattened shader input array, each element converted independently
+ *   gs_bgra8 / gs_unorm1010102 / gs_snorm1010102 / gs_rg11b10 / gs_rgb9e5
+ *                          packed vertex formats through the geometry shader: the object stage fetched
+ *                          them as 0 components ("Invalid component count: 0", pipeline creation failed:
+ *                          American Truck Simulator's GL_INT_2_10_10_10_REV normals via zink) or, for
+ *                          B8G8R8A8 (DXVK's D3DCOLOR), read float4 from memory; snorm1010102 is the same
+ *                          data through Metal's vertex fetch, as a check of the encoding
  *
  *   vertex_input <spv dir> [case]
  */
@@ -107,6 +113,41 @@ static void color(int k, float c[4])
 	c[3] = 1.0f;
 }
 
+/* color(k) in a packed format (its values are exact in all of them), 0 for other formats */
+static int pack(VkFormat f, const float c[4], uint32_t *w)
+{
+	uint32_t r, g, b;
+	switch (f) {
+	case VK_FORMAT_B8G8R8A8_UNORM:
+		*w = (uint32_t)(c[2] * 255.0f + 0.5f) | (uint32_t)(c[1] * 255.0f + 0.5f) << 8 |
+		     (uint32_t)(c[0] * 255.0f + 0.5f) << 16 | (uint32_t)(c[3] * 255.0f + 0.5f) << 24;
+		return 1;
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+		*w = (uint32_t)(c[0] * 1023.0f + 0.5f) | (uint32_t)(c[1] * 1023.0f + 0.5f) << 10 |
+		     (uint32_t)(c[2] * 1023.0f + 0.5f) << 20 | (uint32_t)(c[3] * 3.0f + 0.5f) << 30;
+		return 1;
+	case VK_FORMAT_A2B10G10R10_SNORM_PACK32:
+		*w = ((uint32_t)(int32_t)(c[0] * 511.0f + 0.5f) & 0x3ff) | ((uint32_t)(int32_t)(c[1] * 511.0f + 0.5f) & 0x3ff) << 10 |
+		     ((uint32_t)(int32_t)(c[2] * 511.0f + 0.5f) & 0x3ff) << 20 | ((uint32_t)(int32_t)c[3] & 0x3) << 30;
+		return 1;
+	case VK_FORMAT_B10G11R11_UFLOAT_PACK32: {
+		/* unsigned 11/10-bit floats: the bits of a half without the sign and low mantissa bits */
+		_Float16 h[3] = { (_Float16)c[0], (_Float16)c[1], (_Float16)c[2] };
+		uint16_t hb[3];
+		memcpy(hb, h, sizeof(hb));
+		*w = (uint32_t)(hb[0] >> 4) | (uint32_t)(hb[1] >> 4) << 11 | (uint32_t)(hb[2] >> 5) << 22;
+		return 1;
+	}
+	case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
+		/* exponent 16: value = mantissa * 2^(16 - 15 - 9) */
+		r = (uint32_t)(c[0] * 256.0f), g = (uint32_t)(c[1] * 256.0f), b = (uint32_t)(c[2] * 256.0f);
+		*w = r | g << 9 | b << 18 | 16u << 27;
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 struct test {
 	const char *name;
 	VkVertexInputRate rate;			/* of both bindings */
@@ -158,6 +199,18 @@ static const struct test tests[] = {
 		.format1 = VK_FORMAT_R32G32B32A32_SINT },
 	{ "float_int_array", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
 		.format1 = VK_FORMAT_R32G32_SFLOAT, .shader = "vi_int_array.vert.spv", .input_array = 1 },
+	{ "snorm1010102", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_A2B10G10R10_SNORM_PACK32 },
+	{ "gs_bgra8", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .gs = 1, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_B8G8R8A8_UNORM },
+	{ "gs_unorm1010102", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .gs = 1, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_A2B10G10R10_UNORM_PACK32 },
+	{ "gs_snorm1010102", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .gs = 1, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_A2B10G10R10_SNORM_PACK32 },
+	{ "gs_rg11b10", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .gs = 1, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_B10G11R11_UFLOAT_PACK32 },
+	{ "gs_rgb9e5", VK_VERTEX_INPUT_RATE_VERTEX, 16, 0, .gs = 1, .expect = { 0, 1, 2, 3 },
+		.format1 = VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 },
 };
 enum { NTESTS = sizeof(tests) / sizeof(tests[0]) };
 
@@ -285,11 +338,14 @@ static int run(const struct test *t)
 		pos[2 * i + 1] = 0.0f;
 	}
 	for (int k = 0; k < 16; k++) {
+		uint32_t w;
 		if (t->integer_bits) {
 			uint32_t bits[4] = { 0x80000000u | (k + 1), 0xffffffffu, 0x80000000u, 0x7fffffffu };
 			memcpy(cols + 4 * k, bits, sizeof(bits));
 		} else {
 			color(k, cols + 4 * k);
+			if (pack(t->format1, cols + 4 * k, &w))
+				memcpy(cols + 4 * k, &w, sizeof(w));
 		}
 	}
 

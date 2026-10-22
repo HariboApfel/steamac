@@ -15,7 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "work/out"
 MESA_INPUTS = (
-    "guest/mesa/build.sh", "guest/mesa/versions.env", "guest/mesa/container",
+    "guest/mesa/build.sh", "guest/mesa/versions.env", "guest/mesa/container", "guest/mesa/patches",
     "scripts/config.env", "scripts/steps/10-rootfs.sh",
     "scripts/builder/Dockerfile", "scripts/keys/steamdeck-images.pem",
 )
@@ -36,7 +36,11 @@ OUTPUTS = {
     "kernel": (OUT / "Image",),
     "initramfs": (OUT / "initramfs.cpio.gz",),
     "mesa": (OUT / "mesa-venus",),
-    "mesa-aarch64": (OUT / "mesa-venus/usr/lib/libvulkan_virtio.so", OUT / "mesa-venus/usr/share/vulkan"),
+    # A '*' in the last component matches one or more files (libgallium-<version>.so)
+    "mesa-aarch64": tuple(OUT / "mesa-venus" / p for p in (
+        "usr/lib/libvulkan_virtio.so", "usr/share/vulkan", "usr/lib/libgallium-*.so", "usr/lib/libGLX_mesa.so*",
+        "usr/lib/libEGL_mesa.so*", "usr/lib/libgbm.so*", "usr/lib/dri", "usr/lib/gbm", "usr/share/glvnd",
+        "usr/share/drirc.d")),
     "mesa-x86": (OUT / "mesa-venus/usr/share/guestos", OUT / "mesa-venus/usr/lib/steamac"),
     "layer": (OUT / "steamac-layer.img",),
 }
@@ -134,11 +138,21 @@ def input_digest(kind):
     return digest.hexdigest()
 
 
+def output_paths(path):
+    if "*" not in path.name:
+        return [path]
+    matches = sorted(path.parent.glob(path.name))
+    if not matches:
+        raise ValueError(f"missing artifact: {path}")
+    return matches
+
+
 def output_digest(kind, resources=None):
     digest = hashlib.sha256()
     paths = OUTPUTS[kind] if resources is None else (resources / OUTPUTS[kind][0].name,)
-    for index, path in enumerate(paths):
-        hash_tree(digest, path, str(index))
+    for index, pattern in enumerate(paths):
+        for path in output_paths(pattern):
+            hash_tree(digest, path, f"{index}" if path == pattern else f"{index}/{path.name}")
     return digest.hexdigest()
 
 
