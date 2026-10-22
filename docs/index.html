@@ -339,6 +339,15 @@
       </div>
     </div>
 
+    <section class="supported-games" aria-labelledby="supported-games-title">
+      <h3 id="supported-games-title"><span lang="en">Supported games</span><span lang="ru">Поддерживаемые игры</span><span lang="zh">支持的游戏</span></h3>
+      <p class="section-lede"><span lang="en">From players' shared statistics, updated live.</span><span lang="ru">По статистике, которой делятся игроки, с обновлением в реальном времени.</span><span lang="zh">来自玩家分享的统计数据，实时更新。</span></p>
+      <div id="supported-games-grid" class="cards" hidden></div>
+      <p id="supported-games-empty" class="section-lede" hidden><span lang="en">No reports yet.</span><span lang="ru">Отчётов пока нет.</span><span lang="zh">暂无报告。</span></p>
+      <p id="supported-games-error" class="section-lede" hidden><span lang="en">Statistics are temporarily unavailable.</span><span lang="ru">Статистика временно недоступна.</span><span lang="zh">统计暂时不可用。</span></p>
+      <a id="supported-games-all" class="btn btn-primary" href="games.html"><span lang="en">All games and details →</span><span lang="ru">Все игры и подробности →</span><span lang="zh">全部游戏与详情 →</span></a>
+    </section>
+
     <div class="limits">
       <h3><span lang="en">Honest limits</span><span lang="ru">Честные ограничения</span><span lang="zh">坦诚的局限</span></h3>
       <ul>
@@ -576,6 +585,8 @@ cd steamac
   </div>
 </footer>
 
+<script src="assets/stats-api.js" defer></script>
 <script src="assets/app.js" defer></script>
+<script src="assets/supported-games.js" defer></script>
 </body>
 </html>

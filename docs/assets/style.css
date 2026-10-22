@@ -333,6 +333,20 @@ h1 em {
 }
 .card h3 { margin: 0 0 8px; font-size: 17px; }
 .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+/* Live compatibility highlights use the same cards as the recorded game examples above. */
+.supported-games { margin-top: 44px; padding-top: 32px; border-top: 1px solid var(--line); scroll-margin-top: 90px; }
+.supported-games > h3 { margin: 0 0 12px; font-size: clamp(24px, 3vw, 34px); letter-spacing: -.025em; }
+.supported-games > .section-lede { margin-bottom: 22px; }
+.supported-games > .btn { margin-top: 22px; }
+.supported-games [hidden] { display: none !important; }
+.supported-game { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; color: var(--text); }
+.supported-game:hover { border-color: var(--steam2); text-decoration: none; }
+.supported-game:focus-visible { outline: 2px solid var(--steam2); outline-offset: 4px; }
+.supported-game h4 { margin: 0; font-size: 17px; line-height: 1.35; }
+.supported-game strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.supported-badge { color: var(--steam2); background: rgba(102, 192, 244, .1); border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 650; }
+.supported-well { color: #4ade80; background: rgba(74, 222, 128, .1); }
 .limits { margin-top: 44px; padding: 24px 26px; border-radius: 16px; border: 1px dashed rgba(255, 255, 255, .14); }
 .limits h3 { margin: 0 0 12px; font-size: 15px; font-family: var(--mono); letter-spacing: .1em; text-transform: uppercase; color: #ffb37a; }
 .limits ul { margin: 0; padding-left: 18px; color: #a9b8c9; }

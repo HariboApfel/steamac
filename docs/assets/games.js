@@ -1,5 +1,3 @@
-const API = "https://steamac-game-stats.steamac-game-stats.workers.dev";
-
 (function () {
   "use strict";
   const root = document.documentElement;
@@ -88,11 +86,8 @@ const API = "https://steamac-game-stats.steamac-game-stats.workers.dev";
     element.replaceChildren(translated(key)); element.hidden = false;
     if (retry) { const button = document.createElement("button"); button.type = "button"; button.className = "stats-retry"; button.append(translated("retry")); button.addEventListener("click", retry); element.append(button); }
   }
-  let base = API, games = [], generated = "", detailData = null, detailRequest = 0, listRequest = 0;
-  try {
-    const override = new URLSearchParams(location.search).get("api");
-    if (override) { const url = new URL(override); if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Invalid API URL"); base = url.href.replace(/\/$/, ""); }
-  } catch { status("list-status", "error"); return; }
+  let base, games = [], generated = "", detailData = null, detailRequest = 0, listRequest = 0;
+  try { base = window.steamacStats.baseURL(); } catch { status("list-status", "error"); return; }
   const hardware = [
     { field: "gpu", param: "max_gpu_cores", max: 4096, label: "gpu_limit" },
     { field: "ram", param: "max_ram_gb", max: 4096, label: "ram_limit" },
