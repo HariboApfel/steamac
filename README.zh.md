@@ -651,7 +651,7 @@ download|skip|later|ok|releases`、`update dump PNG`（窗口与 `-with-vm.png`�
 
 | 目录 | 内容 |
 |---|---|
-| `host/moltenvk/` | MoltenVK utmapp `geometry-shaders` @05604465 + 补丁：depth_clip_enable、YCbCr 数组、null 描述符、zink/DXVK 用几何着色器模拟（顶点步长、实例化、邻接、扇、SCALED 格式、`gl_in`）、transform feedback（DXVK 流输出）与其查询（SO 统计）、拷贝时查询结果可用（经 Venus 的 DXVK 遮挡查询）、缓冲地址向量分量原子（BDA，vkd3d-proton）、任意 texel 偏移 texel 缓冲（vkd3d-proton）、robustness2 小推导描述符缓冲写入、可变计数描述符数组做运行时数组（Metal 给 vkd3d-proton 每堆数组留 32 MB 与程序）、辅助缓冲分配、Metal 资源延迟释放、管线缓存 UUID 中补丁哈希、绑定中的 `VK_NULL_HANDLE` 描述符集、片元输出转换为颜色附件的数值类型、没有顶点属性的顶点着色器输入读取零；`repro/` 测试跑在 Metal validation 下（KosmicKrisp 也可：`REPRO_DRIVER=kosmickrisp`）；`bench/run.sh <libdir>…` 比较构建间性能；`bench/shaders.sh <dump or pack>` 从 MoltenVK 着色器转储或 `bench/pack.py` 制作的 10% 采样度量游戏着色器编译（SPIR-V → MSL、MSL → Metal 库、管线状态；冷/热、多线程） |
+| `host/moltenvk/` | MoltenVK utmapp `geometry-shaders` @05604465 + 补丁：depth_clip_enable、YCbCr 数组、null 描述符、zink/DXVK 用几何着色器模拟（顶点步长、实例化、邻接、扇、SCALED 格式、`gl_in`）、transform feedback（DXVK 流输出）与其查询（SO 统计）、拷贝时查询结果可用（经 Venus 的 DXVK 遮挡查询）、缓冲地址向量分量原子（BDA，vkd3d-proton）、任意 texel 偏移 texel 缓冲（vkd3d-proton）、robustness2 小推导描述符缓冲写入、可变计数描述符数组做运行时数组（Metal 给 vkd3d-proton 每堆数组留 32 MB 与程序）、辅助缓冲分配、Metal 资源延迟释放、管线缓存 UUID 中补丁哈希、绑定中的 `VK_NULL_HANDLE` 描述符集、片元输出转换为颜色附件的数值类型、没有顶点属性的顶点着色器输入读取零、经浮点格式读取整数顶点输入、辅助函数中 YCbCr 采样器的 null 检查、拒绝不支持的 texel buffer 格式；`repro/` 测试跑在 Metal validation 下（KosmicKrisp 也可：`REPRO_DRIVER=kosmickrisp`）；`bench/run.sh <libdir>…` 比较构建间性能；`bench/shaders.sh <dump or pack>` 从 MoltenVK 着色器转储或 `bench/pack.py` 制作的 10% 采样度量游戏着色器编译（SPIR-V → MSL、MSL → Metal 库、管线状态；冷/热、多线程） |
 | `host/kosmickrisp/` | KosmicKrisp（Mesa 主线 @ce576c29）+ 未合并 Mesa MR 与 steamac 补丁（见“Vulkan 驱动”），运行时无 LLVM（`-Dllvm=disabled`，`mesa_clc` 来自首构建），`-Db_ndebug=true`；仅 macOS 26+ |
 | `host/libepoxy/` | libepoxy 1.5.10，上游 macOS Meson 选项，为 macOS 15.0 而非拷贝 Homebrew 瓶构建 |
 | `host/virglrenderer/` | virglrenderer UTM `macos-next` + 合并上游主线（venus-protocol 1.1.3）+ LINEAR 修饰符、shm 按宿主内存导入、失败管线桩（virglrenderer 中丢弃绘制）、拒绝缓存重建、延迟 shm 解映射、线程 QoS、运行时打开 Vulkan 驱动（`VKR_VULKAN_DRIVER`） |
@@ -680,6 +680,14 @@ Vulkan 未定义这些值）。现在改用附件类型声明输出，写入其�
 顶点着色器读取管线未提供顶点属性的输入时，Metal 原先会编译失败（“missing from the vertex descriptor”），
 管线绘制被跳过（SCS Truck Simulator 的着色器从 location 1 读取 `in_var_NORMAL`，而管线未描述该属性，
 STEAMAC-2Y；Vulkan 未定义这些值）。现在这类输入读取零（`repro/vertex_input.c`）。
+
+由浮点顶点格式提供的整数顶点着色器输入（BLUE REFLECTION: Second Light 以 `int4` 从 `Float3`/`Float4`
+属性读取 `BLENDINDICES1`，STEAMAC-3N）在 Metal 中编译失败（“cannot be read using MTLAttributeFormatFloat3”），
+角色不可见；现在以与格式兼容的类型读取属性并重新解释其位（`repro/vertex_input.c`）。通过带不可变 YCbCr
+采样器的辅助函数进行鲁棒采样不再编译失败（`is_null_texture`，STEAMAC-3W；`repro/texture_helpers.c`）。
+Metal 没有对应像素格式的 texel buffer view 返回 `VK_ERROR_FORMAT_NOT_SUPPORTED`，而不是使虚拟机进程中止
+（Uncharted，STEAMAC-3Q；`repro/texel_buffer.c`）。图形管线失败时记录每个阶段的入口点、着色器哈希与反射接口，
+用于没有 MSL 的链接错误和编译器错误。
 
 SteamOS 根文件系统不动：所有改动来自 initramfs 与层。因此
 官方 Valve 更新（RAUC + atomupd）装进另一槽并正常回滚——已用 20260922 → 20260928 更新与回滚验证。
