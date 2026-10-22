@@ -70,7 +70,7 @@ final class DiskCreator {
         return path + ".cache"
     }
     static var defaultPath: String { AppBundle.appSupportDir + "/steamos.img" }
-    /// Temporary rootfs.img (sparse desync output) and the disk while it is written.
+    /// Temporary rootfs.img (fully preallocated by desync on Darwin) and the disk being written.
     static func rootfsTemp(_ path: String) -> String { path + ".rootfs-tmp" }
     static func diskTemp(_ path: String) -> String { path + ".partial" }
 
@@ -146,6 +146,14 @@ final class DiskCreator {
     // MARK: run
 
     func run(_ r: Request) throws -> Result {
+        do { return try create(r) }
+        catch {
+            if let rejection = DiskCreationFilesystem.rejection(error) { throw rejection }
+            throw error
+        }
+    }
+
+    private func create(_ r: Request) throws -> Result {
         let fm = FileManager.default
         guard let desync = DiskCreator.desyncPath else { throw OptionError("desync not found (bundle Contents/Resources/desync or work/out/host/bin/desync: host/launcher/fetch-desync.sh)") }
         guard let caPath = DiskCreator.caPath else { throw OptionError("Valve RAUC CA steamdeck-images.pem not found") }
@@ -173,6 +181,8 @@ final class DiskCreator {
         try fm.createDirectory(atPath: cacheRoot, withIntermediateDirectories: true)
         let lockFD = try DiskCreator.acquireCreationLock(cacheRoot: cacheRoot)
         defer { close(lockFD) }
+        try DiskCreationFilesystem.requireWritable(directory: cacheRoot)
+        log("create-disk: target \(dir): \(DiskCreationFilesystem.diagnostic(directory: dir)); cache \(cacheRoot): \(DiskCreationFilesystem.diagnostic(directory: cacheRoot))")
         guard !fm.fileExists(atPath: path) else {
             throw DiskCreationFilesystem.Rejection("\(path) already exists (never overwritten; delete it or choose another path)",
                 localized: String(localized: "\(path) already exists (never overwritten; delete it or choose another path)"))
@@ -216,8 +226,8 @@ final class DiskCreator {
         // an attempt that failed later is no seed and would only take its space twice.
         let tmp = DiskCreator.rootfsTemp(path)
         try? fm.removeItem(atPath: tmp)
-        // Sparse volumes use rootfs data ~3x (temp + both slots); exFAT allocates the whole
-        // disk and temporary rootfs. The compressed chunk cache is additional on either FS.
+        // desync preallocates the full temporary rootfs on Darwin even on APFS. Only the
+        // destination slots are sparse; exFAT allocates the whole destination disk too.
         let info = try desyncInfo(desync, caibxPath)
         let dataBytes = info.bytes
         try checkSpace(disk: dir, dense: denseFiles, diskBytes: diskBytes, rootBytes: rootBytes, dataBytes: dataBytes,
@@ -225,6 +235,7 @@ final class DiskCreator {
 
         // 3. reconstruct
         try fm.createDirectory(atPath: chunkCache, withIntermediateDirectories: true)
+        try DiskCreationFilesystem.requireWritable(directory: chunkCache)
         let stores = [DiskCreator.imagesURL + (c.updatePath as NSString).deletingPathExtension + ".castr/",
                       DiskCreator.imagesURL + c.chunksStorePath + "/"]
         log("create-disk: desync extract -> \(tmp) (stores: \(stores.joined(separator: ", ")); cache \(chunkCache))")
@@ -252,8 +263,36 @@ final class DiskCreator {
         try gpt.write(fd: fd)
         let a = gpt.entry("rootfs-A")!, b = gpt.entry("rootfs-B")!
         guard a.sectors * 512 == rootBytes, b.sectors * 512 == rootBytes else { throw OptionError("layout: rootfs slot size") }
-        try copyRootfs(tmp, size: rootBytes, into: fd, offsets: [a.firstLBA * 512, b.firstLBA * 512],
-                       sha256: manifest.rootfsSHA256)
+        do {
+            try copyRootfs(tmp, size: rootBytes, into: fd, offsets: [a.firstLBA * 512, b.firstLBA * 512],
+                           sha256: manifest.rootfsSHA256)
+        } catch let failure as IntegrityFailure {
+            // Distinguish bad extent metadata from actual bad bytes before discarding evidence.
+            let sequential = try rootfsDigest(tmp)
+            log("create-disk: integrity: extent sha256=\(failure.got), sequential sha256=\(sequential), expected=\(manifest.rootfsSHA256); \(DiskCreationFilesystem.diagnostic(directory: dir))")
+            if sequential != manifest.rootfsSHA256 {
+                // A fresh serial, uncached extraction cannot reuse corrupt cache chunks or the
+                // previous output's self-seed, and avoids concurrent filesystem write races.
+                try fm.removeItem(atPath: tmp)
+                if fm.fileExists(atPath: chunkCache) { try fm.removeItem(atPath: chunkCache) }
+                log("create-disk: integrity: removed temporary rootfs and chunk cache; retrying once with one worker and no cache")
+                try reconstruct(desync, caibxPath, tmp, stores: stores, cache: nil, dataBytes: dataBytes, concurrency: 1)
+            } else {
+                log("create-disk: integrity: file bytes match manifest; retrying copy without SEEK_DATA/SEEK_HOLE")
+            }
+            // Clear both slots, including incorrect nonzero blocks from the first copy.
+            guard ftruncate(fd, 0) == 0, ftruncate(fd, off_t(diskBytes)) == 0 else {
+                throw OptionError("ftruncate \(partial): \(String(cString: strerror(errno)))")
+            }
+            try gpt.write(fd: fd)
+            do {
+                try copyRootfs(tmp, size: rootBytes, into: fd, offsets: [a.firstLBA * 512, b.firstLBA * 512],
+                               sha256: manifest.rootfsSHA256, sparse: false)
+            } catch let retry as IntegrityFailure {
+                try? fm.removeItem(atPath: tmp)
+                throw OptionError("rootfs integrity failed after a serial uncached retry: sha256 \(retry.got) != manifest \(manifest.rootfsSHA256); check the drive with Disk Utility or choose another drive (temporary rootfs and chunk cache deleted)")
+            }
+        }
         log("create-disk: rootfs sha256 OK: \(manifest.rootfsSHA256) == manifest; written to rootfs-A (LBA \(a.firstLBA)) and rootfs-B (LBA \(b.firstLBA))")
         guard fsync(fd) == 0 else { throw OptionError("fsync \(partial): \(String(cString: strerror(errno)))") }
 
@@ -365,28 +404,38 @@ final class DiskCreator {
 
     /// Unique non-null data in the index (what the chunk store delivers and the disk stores) and
     /// its number of unique chunks (files in the chunk cache).
-    private func desyncInfo(_ desync: String, _ caibx: String) throws -> (bytes: UInt64, chunks: UInt64) {
+    func desyncInfo(_ desync: String, _ caibx: String) throws -> (bytes: UInt64, chunks: UInt64) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: desync)
         p.arguments = ["info", caibx]
         let out = Pipe()
         p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
+        // Keep stderr without a second pipe (a full stderr pipe could deadlock stdout).
+        let diagnostic = FileManager.default.temporaryDirectory.appendingPathComponent("steamac-desync-info-\(UUID().uuidString)")
+        guard FileManager.default.createFile(atPath: diagnostic.path, contents: nil) else { throw OptionError("cannot create desync info diagnostic") }
+        defer { try? FileManager.default.removeItem(at: diagnostic) }
+        let errors = try FileHandle(forWritingTo: diagnostic)
+        defer { try? errors.close() }
+        p.standardError = errors
         try p.run()
         let data = out.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         guard p.terminationStatus == 0, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let n = (j["dedup-size-not-in-seed"] as? NSNumber)?.uint64Value,
               let chunks = (j["unique"] as? NSNumber)?.uint64Value else {
-            throw OptionError("desync info \(caibx) failed")
+            let detail = String(decoding: (try? Data(contentsOf: diagnostic)) ?? Data(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            log("create-disk: desync info: exit \(p.terminationStatus), reason \(p.terminationReason.rawValue), stdout \(String(decoding: data.prefix(4096), as: UTF8.self)), stderr \(detail)")
+            throw OptionError("desync info \(caibx) failed (exit \(p.terminationStatus), reason \(p.terminationReason.rawValue)): \(detail.isEmpty ? "invalid or missing JSON output" : detail)")
         }
         return (n, chunks)
     }
 
-    private func reconstruct(_ desync: String, _ caibx: String, _ out: String, stores: [String], cache: String, dataBytes: UInt64) throws {
+    func reconstruct(_ desync: String, _ caibx: String, _ out: String, stores: [String], cache: String?, dataBytes: UInt64, concurrency: Int = 16) throws {
         status("reconstruct", "Downloading SteamOS…", "starting desync", localizedDetail: "")
-        // No --in-place: that preallocates all 10 GiB; a fresh extract keeps the null chunks as holes.
-        var args = ["extract", "--concurrency", "16", "--error-retry", "10", "--cache", cache]
+        // A fresh output never trusts a previous rootfs as a seed. desync validates cache
+        // chunk digests and repairs invalid chunks; request that explicitly.
+        var args = ["extract", "--concurrency", "\(concurrency)", "--error-retry", "10", "--cache-repair=true", "--print-stats"]
+        if let cache { args += ["--cache", cache] }
         for s in stores { args += ["--store", s] }
         args += [caibx, out]
         // desync draws its progress bar only on a terminal: give it a pty and parse "NN.NN%".
@@ -431,6 +480,7 @@ final class DiskCreator {
                     }
                 } else if !piece.hasPrefix("Attempt ") {
                     recent.append(piece)
+                    log("create-disk: desync: \(piece)")
                     if recent.count > 8 { recent.removeFirst() }
                 }
             }
@@ -448,6 +498,12 @@ final class DiskCreator {
         lock.lock(); process = nil; lock.unlock()
         try checkCancel()
         guard p.terminationStatus == 0 else {
+            if cache != nil && DiskCreator.cacheRenameCollision(output: recent) {
+                log("create-disk: cache rename collision; retrying once with one worker and no cache")
+                try? FileManager.default.removeItem(atPath: out)
+                try reconstruct(desync, caibx, out, stores: stores, cache: nil, dataBytes: dataBytes, concurrency: 1)
+                return
+            }
             throw DiskCreator.desyncFailure(status: p.terminationStatus, output: recent)
         }
         log(String(format: "create-disk: desync done in %.0f s", Date().timeIntervalSince(start)))
@@ -464,6 +520,11 @@ final class DiskCreator {
         return pieces.map { BootProgress.stripANSI($0).trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
 
+    static func cacheRenameCollision(output: [String]) -> Bool {
+        output.contains { $0.contains("failed to store in local cache: rename ")
+            && $0.contains(".tmp-cacnk.") && $0.hasSuffix(": file exists") }
+    }
+
     /// The error of a failed desync from its output lines (progress lines excluded): its
     /// "Error: …" line, chunk ids written as <chunk> so reports of one cause group. Running out
     /// of space and download failures that desync's retries did not overcome are the user's
@@ -474,6 +535,7 @@ final class DiskCreator {
         for pattern in ["[0-9a-f]{4}/[0-9a-f]{64}", "[0-9a-f]{64}"] {
             detail = detail.replacingOccurrences(of: pattern, with: "<chunk>", options: .regularExpression)
         }
+        if let rejection = DiskCreationFilesystem.rejection(OptionError(detail)) { return rejection }
         if detail.contains("no space left on device") {
             return DiskCreationFilesystem.Rejection("the volume ran out of space while downloading SteamOS (\(detail)): free some space and try again; the download resumes where it stopped",
                 localized: String(localized: "the volume ran out of space while downloading SteamOS (\(detail)): free some space and try again; the download resumes where it stopped"))
@@ -501,7 +563,7 @@ final class DiskCreator {
 
     /// One pass over rootfs.img: sha256 of all 10 GiB (holes hashed as zeros) and every non-zero
     /// 16 KiB block written at each offset of `fd` (the zero rest stays sparse).
-    private func copyRootfs(_ path: String, size: UInt64, into fd: Int32, offsets: [UInt64], sha256 expected: String) throws {
+    func copyRootfs(_ path: String, size: UInt64, into fd: Int32, offsets: [UInt64], sha256 expected: String, sparse: Bool = true) throws {
         let src = open(path, O_RDONLY)
         guard src >= 0 else { throw OptionError("\(path): \(String(cString: strerror(errno)))") }
         defer { close(src) }
@@ -538,7 +600,7 @@ final class DiskCreator {
         while off < size {
             try checkCancel()
             // Next data extent (SEEK_DATA/SEEK_HOLE; without support the whole file is data).
-            let ds = lseek(src, off_t(off), SEEK_DATA)
+            let ds = sparse ? lseek(src, off_t(off), SEEK_DATA) : off_t(off)
             let dataStart = ds >= 0 ? UInt64(ds) : (errno == ENXIO ? size : off)
             if dataStart > off {
                 let end = min(size, dataStart)
@@ -547,7 +609,7 @@ final class DiskCreator {
                 report()
                 continue
             }
-            let de = lseek(src, off_t(off), SEEK_HOLE)
+            let de = sparse ? lseek(src, off_t(off), SEEK_HOLE) : off_t(size)
             var dataEnd = de >= 0 ? UInt64(de) : size
             dataEnd = min(size, max(dataEnd, off + 1))
             while off < dataEnd {
@@ -583,9 +645,22 @@ final class DiskCreator {
         }
         let got = hasher.finalize().map { String(format: "%02x", $0) }.joined()
         guard got == expected else {
-            try? FileManager.default.removeItem(atPath: path)
-            throw OptionError("rootfs sha256 \(got) != manifest \(expected) (temporary rootfs deleted; try again)")
+            throw IntegrityFailure(got: got)
         }
+    }
+
+    struct IntegrityFailure: Error { let got: String }
+
+    /// Only used after an integrity failure: read all bytes, independently of sparse extents.
+    private func rootfsDigest(_ path: String) throws -> String {
+        let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+        defer { try? file.close() }
+        var hash = SHA256()
+        while let data = try file.read(upToCount: 8 << 20), !data.isEmpty {
+            try checkCancel()
+            hash.update(data: data)
+        }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: disk space
@@ -602,7 +677,13 @@ final class DiskCreator {
         return dataBytes * 13 / 10 + (2 * chunks + 2 * UInt64(dirs.rounded(.up))) * blockSize
     }
 
-    /// Before downloading. Sparse volumes: rootfs data ~3x (temporary rootfs + both slots).
+    static func sparseWorkingBytes(rootBytes: UInt64, dataBytes: UInt64) -> UInt64 {
+        rootBytes + 2 * dataBytes
+    }
+
+    /// Before downloading. desync preallocates the full rootfs on Darwin; only the two
+    /// destination slots are sparse. Counting three copies of just the data underestimates
+    /// SteamOS 20261007's peak usage by 6.3 GB (STEAMAC-48).
     /// exFAT (`dense`): the temporary rootfs and the whole disk; the chunk cache is not needed
     /// once the rootfs is rebuilt and is dropped if the disk does not fit next to it
     /// (`dropChunkCache`), so it counts only where it is larger than the disk (or is kept).
@@ -620,7 +701,7 @@ final class DiskCreator {
         if dense {
             needDisk = rootBytes + (!sameVolume ? diskBytes : keepCache ? diskBytes + cacheNeed : max(diskBytes, cacheNeed)) + margin
         } else {
-            needDisk = 3 * dataBytes + (sameVolume ? cacheNeed : 0) + margin
+            needDisk = DiskCreator.sparseWorkingBytes(rootBytes: rootBytes, dataBytes: dataBytes) + (sameVolume ? cacheNeed : 0) + margin
         }
         let gb = { (n: UInt64) in String(format: "%.1f GB", Double(n) / 1e9) }
         log("create-disk: space: need ~\(gb(needDisk)) on \(disk) (free \(gb(freeDisk)))"
