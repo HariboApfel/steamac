@@ -35,6 +35,15 @@ beforeEach(async () => {
   await env.DB.prepare("DELETE FROM game_names").run();
 });
 
+describe("non-Steam shortcuts", () => {
+  it("keeps rows stored with a shortcut app id out of every answer", async () => {
+    expect((await request("/v1/sessions", sample())).status).toBe(201);
+    await env.DB.prepare("UPDATE sessions SET appid = 3103058971").run();
+    expect((await (await request("/v1/games")).json()).games).toEqual([]);
+    expect((await request("/v1/games/3103058971")).status).toBe(404);
+  });
+});
+
 describe("schema validation", () => {
   it("accepts schema v1 and ignores unknown fields", () => {
     const row = validate(sample({ extra: { ignored: true } }));
@@ -43,7 +52,7 @@ describe("schema validation", () => {
   });
   it.each([
     ["schema", (b) => { b.v = 2; }], ["UUID", (b) => { b.sid = "bad"; }],
-    ["appid zero", (b) => { b.appid = 0; }], ["appid overflow", (b) => { b.appid = 4294967296; }],
+    ["appid zero", (b) => { b.appid = 0; }], ["non-Steam shortcut appid", (b) => { b.appid = 3103058971; }],
     ["boolean type", (b) => { b.launched = 1; }], ["driver", (b) => { b.vm.driver = "other"; }],
     ["end", (b) => { b.end = "crash"; }], ["duration", (b) => { b.run_s = 604801; }],
     ["play duration", (b) => { b.play_s = b.run_s + 1; }], ["FPS", (b) => { b.fps.avg = 1001; }],

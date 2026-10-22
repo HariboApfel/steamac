@@ -316,7 +316,7 @@ final class GameSessionTracker {
 
     private func focus(_ f: GuestFocus) {
         switch f {
-        case .game(let id) where id > 0:
+        case .game(let id) where GameSessionTracker.isSteamApp(id):
             // An agent without lifecycle lines: a game focused after another one replaced it.
             if let previous = focused, previous != id, live[previous]?.fromGameStart == false {
                 end(previous, .replaced)
@@ -341,7 +341,12 @@ final class GameSessionTracker {
         live[id]?.res = "\(w)x\(h)"
     }
 
+    /// Steam app ids. Non-Steam shortcuts added to the library get ids with the top bit set,
+    /// meaningful only on this Mac: they are not tracked.
+    static func isSteamApp(_ id: Int) -> Bool { id > 0 && id <= Int(Int32.max) }
+
     private func event(_ e: GuestGameEvent) {
+        guard GameSessionTracker.isSteamApp(e.appid) else { return }
         switch e {
         case .start(let id):
             if live[id] == nil {

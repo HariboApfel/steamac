@@ -35,6 +35,12 @@ enum GuestGameEvent: Equatable {
     case memory(appid: Int, anonKiB: Int, guestUsedKiB: Int)
     case proton(appid: Int, version: String)
     case exit(appid: Int)
+
+    var appid: Int {
+        switch self {
+        case .start(let id), .exit(let id), .memory(let id, _, _), .proton(let id, _): return id
+        }
+    }
 }
 
 /// Boot / shutdown progress model (local://overlay-contract.md). Fed with hvc0 console lines

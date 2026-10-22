@@ -7,6 +7,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^[\x21-\x7e]+$/;
 const VERSION = /^[A-Za-z0-9][A-Za-z0-9._+()-]*$/;
 const RATING_KEYS = ["well", "issues", "unplayable", "no_start"];
+/** Steam app ids; non-Steam shortcuts added to a library get ids with the top bit set, meaningful
+ *  only on the Mac that made them. */
+const STEAM_APPID_MAX = 2147483647;
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -41,7 +44,7 @@ export function validate(value, rating = false) {
     v: number(b.v, "v", 1, 1, true),
     install: string(b.install, "install", 36, UUID).toLowerCase(),
     launcher: string(b.launcher, "launcher", 64, VERSION),
-    appid: number(b.appid, "appid", 1, 4294967295, true),
+    appid: number(b.appid, "appid", 1, STEAM_APPID_MAX, true),
     mac_model: string(mac.model, "mac.model", 64, /^[A-Za-z0-9,._-]+$/),
     mac_chip: string(mac.chip, "mac.chip", 64, /^[A-Za-z0-9 +()._-]+$/),
     mac_cores: number(mac.cores, "mac.cores", 1, 1024, true),
@@ -157,15 +160,16 @@ function hardwareFilters(params) {
   }
   return filters;
 }
-/** One bound predicate is shared by every session/rating aggregate; NULL never satisfies <=. */
+/** One bound predicate is shared by every session/rating aggregate; NULL never satisfies <=. Rows of
+ *  non-Steam shortcuts stored before they were refused stay out of every aggregate. */
 function reportScope(appid, filters) {
-  const clauses = [], bindings = [];
+  const clauses = ["appid <= ?"], bindings = [STEAM_APPID_MAX];
   if (appid !== undefined) { clauses.push("appid = ?"); bindings.push(appid); }
   for (const [key, value] of Object.entries(filters)) {
     clauses.push(`${HARDWARE_FILTERS[key].column} <= ?`);
     bindings.push(value);
   }
-  return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", bindings };
+  return { where: `WHERE ${clauses.join(" AND ")}`, bindings };
 }
 /** Window ranks produce exact medians, ignoring missing measurements, without transferring raw history. */
 async function summaries(db, scope, config = false) {
@@ -236,7 +240,7 @@ export default {
     try {
       const url = new URL(request.url), path = url.pathname;
       const detail = /^\/v1\/games\/([1-9]\d*)$/.exec(path);
-      const isGet = path === "/v1/games" || (detail && Number(detail[1]) <= 4294967295);
+      const isGet = path === "/v1/games" || (detail && Number(detail[1]) <= STEAM_APPID_MAX);
       const isPost = path === "/v1/sessions" || path === "/v1/ratings";
       if (!isGet && !isPost) throw new HttpError(404, "Not found");
       if (request.method === "OPTIONS") return json({ status: "ok" });
