@@ -285,6 +285,7 @@ do {
         RollingLog.console.append(BootProgress.stripANSI(line))
         progress.consoleLine(line)
         CrashReporting.consoleLine(line)
+        GameSessionTracker.consoleLine(line)
     }
     let progressPort = try ProgressPort()
     // Log bundles requested by Report a Problem arrive on the same port.
@@ -433,7 +434,10 @@ do {
     // Settings > General "Pause the game" in the background; no GPU-idle card while frozen.
     let gamePause = GamePause(settings: settings, progress: progress) { progressPort.send($0) }
     gamePause.onChange = { stall.paused = $0 }
-    gamePause.onConfirmedChange = { [weak wc] in wc?.gamePaused($0) }
+    // Game statistics (Settings > Games): one report per game run, frames counted while it has focus.
+    let gameStats = GameSessionTracker(options: options, progress: progress) { [weak wc] in wc?.window }
+    DebugControl.gameStats = gameStats
+    gamePause.onConfirmedChange = { [weak wc] in wc?.gamePaused($0); gameStats.gamePaused($0) }
     // Settings > General "Share clipboard with SteamOS" (fx.clipboard).
     let clipboard = clipboardPort.map { ClipboardSync(port: $0, settings: settings) }
     let suspender = SuspendController(ctx: vm.ctx, clock: clockPort, sleepPort: sleepPort, window: wc, presenter: presenter,
@@ -444,6 +448,7 @@ do {
         noPicture.vmPaused = paused
         gamepad?.vmPaused(paused)
         clipboard?.vmPaused = paused
+        gameStats.vmPaused = paused
         if paused {
             activity.map(ProcessInfo.processInfo.endActivity)
             activity = nil
@@ -509,7 +514,8 @@ do {
     }
     console.start()
     vm.start()
-    withExtendedLifetime((presenter, gamepad, progressPort, supervisorWatch, perfSubscription, gamePause, suspender, clipboard)) {
+    withExtendedLifetime((presenter, gamepad, progressPort, supervisorWatch, perfSubscription, gamePause, suspender, clipboard,
+                          gameStats)) {
         app.run()
     }
 } catch {

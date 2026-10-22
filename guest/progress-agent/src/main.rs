@@ -12,7 +12,7 @@
 //!   ready                         Steam UI (Desktop Mode: the desktop) is on screen
 //!   shutdown <poweroff|reboot>    session torn down by a system shutdown
 //!   game <appid> <name>           display name from the appmanifest, once per app id and
-//!                                 boot, right after its first `focus game <appid>`
+//!                                 boot, after its first `game-start` or `focus game`
 //!   focus steam [<w>x<h>] | focus game <appid> [<w>x<h>] | focus desktop [<w>x<h>]
 //!                                 gamescope's focused app (GAMESCOPE_FOCUSED_APP; 0 and
 //!                                 769 = Steam UI) and the size of the surface the cursor
@@ -26,6 +26,13 @@
 //!                                 launcher's Report a Problem)
 //!   game-frozen <appid> / game-thawed <appid>   a freeze took effect / the game
 //!                                 was thawed (freeze.rs; the "Game paused" overlay)
+//!   game-start <appid>            first Steam scope appeared, including at agent start
+//!   game-mem <appid> <anon_kib> <guest_used_kib>   every 5 s: summed scope anon
+//!                                 memory and MemTotal - MemAvailable, both in KiB
+//!   game-proton <appid> <version>  once per run when compatdata version is readable:
+//!                                 first token of the first line, printable ASCII, <= 64 chars
+//!   game-exit <appid>             last Steam scope disappeared (games.rs);
+//!                                 app ids 0 and 769 are excluded from all four lines
 //!
 //! Host -> guest (same port): `collect-logs <id>`, served at any point of the
 //! lifecycle below (worker thread; the bundle goes out from the main loop);
@@ -57,8 +64,10 @@
 //!                             (a regular file, FIFO or another char device)
 //!   FX_PROGRESS_STEAM_LOG=<path>  bootstrapper log to follow
 //!   FX_PROGRESS_FORCE=1       ignore the once-per-boot `ready` marker
-//!   FX_PROGRESS_STEAM_ROOT=<dir>  Steam root for appmanifest lookup and the
-//!                             bootstrapper's language files (default ~/.local/share/Steam)
+//!   FX_PROGRESS_STEAM_ROOT=<dir>  Steam root for appmanifest / compatdata lookup and
+//!                             bootstrapper language files (default ~/.local/share/Steam)
+//!   FX_PROGRESS_CGROUP_ROOT=<dir>  override the user manager cgroup for game tracking
+//!                             and freezing (default discovered from /proc/self/cgroup)
 //!
 //! `fx-progress-agent clock-sync` is a separate mode, run as root by
 //! fx-clock-sync.service: it steps the wall clock after the launcher resumes a
@@ -94,6 +103,7 @@ mod steamstrings;
 mod ui;
 mod uhid;
 mod freeze;
+mod games;
 
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::{Duration, Instant};
@@ -335,6 +345,8 @@ fn report_boot(
     heartbeat: Option<&alive::Heartbeat>,
     collector: &mut collect::Collector,
     freezer: &mut freeze::Freezer,
+    games: &mut games::Games,
+    names: &mut appname::Names,
 ) {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/home/steamos".into());
     let log_path = std::env::var("FX_PROGRESS_STEAM_LOG")
@@ -393,9 +405,11 @@ fn report_boot(
         rep.port.flush();
         serve_host(&mut rep.port, collector, freezer, focus);
         collector.pump(&mut rep.port);
-        focus.pump(&mut rep.port, false);
+        focus.pump(&mut rep.port, false, names);
         if let Some(hb) = heartbeat {
-            hb.pump(&mut rep.port);
+            if hb.pump(&mut rep.port) {
+                games.pump(Instant::now(), &mut rep.port, names);
+            }
         }
         if now.duration_since(begin) > GIVE_UP {
             eprintln!("fx-progress: no Steam UI after {} min, stop reporting boot progress", GIVE_UP.as_secs() / 60);
@@ -443,6 +457,9 @@ fn main() {
     let heartbeat = alive::Heartbeat::new();
     let mut collector = collect::Collector::new();
     let mut freezer = freeze::Freezer::new();
+    let mut games = games::Games::new();
+    let mut names = appname::Names::new(appname::steam_root(),
+        format!("/tmp/.fx-progress-named-{}", unsafe { libc::getuid() }).into());
     let force = std::env::var("FX_PROGRESS_FORCE").map_or(false, |v| v == "1");
     let already = !force && std::fs::read_to_string(ready_marker()).map_or(false, |s| s.trim() == boot_id());
     let mut desktop_ready_pending = false;
@@ -454,10 +471,10 @@ fn main() {
         rep.stage(Stage::Session, 100, "Session started");
         desktop_ready_pending = true;
     } else {
-        report_boot(&mut rep, &mut focus, heartbeat.as_ref(), &mut collector, &mut freezer);
+        report_boot(&mut rep, &mut focus, heartbeat.as_ref(), &mut collector, &mut freezer, &mut games, &mut names);
     }
     // Once after `ready` (or at agent start on a later session): current focus.
-    focus.pump(&mut rep.port, true);
+    focus.pump(&mut rep.port, true, &mut names);
 
     // Idle until the session is torn down: block in ppoll(2) on the X
     // connection (focus changes), the heartbeat timer, host requests on the
@@ -477,7 +494,7 @@ fn main() {
             rep.port.flush();
             serve_host(&mut rep.port, &mut collector, &mut freezer, &focus);
             collector.pump(&mut rep.port);
-            focus.pump(&mut rep.port, false);
+            focus.pump(&mut rep.port, false, &mut names);
             if desktop_ready_pending && focus.desktop_shown() {
                 desktop_ready_pending = false;
                 rep.port.send("ready");
@@ -485,7 +502,9 @@ fn main() {
                 let _ = std::fs::write(ready_marker(), boot_id());
             }
             if let Some(hb) = heartbeat.as_ref() {
-                hb.pump(&mut rep.port);
+                if hb.pump(&mut rep.port) {
+                    games.pump(Instant::now(), &mut rep.port, &mut names);
+                }
             }
             let mut pfds = [
                 libc::pollfd { fd: focus.fd().unwrap_or(-1), events: libc::POLLIN, revents: 0 },

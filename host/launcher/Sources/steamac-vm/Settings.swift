@@ -21,7 +21,7 @@ final class LauncherSettings: ObservableObject {
     enum Key: String, CaseIterable {
         // General
         case showOverlay, showStallIndicator, openFullscreen, perfStats, sendCrashReports, muteInBackground, pauseInBackground,
-             closeAction, checkForUpdates, followMacTime, shareClipboard, shareConcealedClipboard
+             closeAction, checkForUpdates, followMacTime, shareClipboard, shareConcealedClipboard, shareGameStats
         // Display
         case dpiSource, fixedDPI, fixedWidthMM, fixedHeightMM, refreshRate, followWindowSize, windowWidth, windowHeight,
              windowSizePreset, retinaResolution, metalHUD, superResolution
@@ -310,6 +310,9 @@ final class LauncherSettings: ObservableObject {
     @Published var closeAction = CloseAction.shutDown { didSet { save(.closeAction, closeAction.rawValue) } }
     /// New-version check when the app starts (UpdateChecker; never in development builds); applies now.
     @Published var checkForUpdates = true { didSet { save(.checkForUpdates, checkForUpdates) } }
+    /// Game statistics (GameStats): finished game sessions and the player's ratings go to the
+    /// public statistics service; off until the user agrees. Applies now.
+    @Published var shareGameStats = false { didSet { save(.shareGameStats, shareGameStats) } }
     /// The guest's time zone and 12/24-hour format follow the Mac (MacTime kernel parameters)
     /// until each is changed inside SteamOS; next start.
     @Published var followMacTime = true { didSet { save(.followMacTime, followMacTime) } }
@@ -413,6 +416,7 @@ final class LauncherSettings: ObservableObject {
         bool(.shareConcealedClipboard, &shareConcealedClipboard)
         if let s = d.string(forKey: Key.closeAction.rawValue).flatMap(CloseAction.init(rawValue:)) { closeAction = s }
         bool(.checkForUpdates, &checkForUpdates)
+        bool(.shareGameStats, &shareGameStats)
         bool(.followMacTime, &followMacTime)
         if let s = d.string(forKey: Key.dpiSource.rawValue).flatMap(DPISource.init(rawValue:)) { dpiSource = s }
         int(.fixedDPI, &fixedDPI)
@@ -494,6 +498,7 @@ final class LauncherSettings: ObservableObject {
         case .shareConcealedClipboard: guard let b else { return false }; shareConcealedClipboard = b
         case .closeAction: guard let v = CloseAction(rawValue: text) else { return false }; closeAction = v
         case .checkForUpdates: guard let b else { return false }; checkForUpdates = b
+        case .shareGameStats: guard let b else { return false }; shareGameStats = b
         case .followMacTime: guard let b else { return false }; followMacTime = b
         case .dpiSource: guard let v = DPISource(rawValue: text) else { return false }; dpiSource = v
         case .fixedDPI: guard let i else { return false }; fixedDPI = i
@@ -552,7 +557,8 @@ final class LauncherSettings: ObservableObject {
         openFullscreen = fresh.openFullscreen; perfStats = fresh.perfStats; sendCrashReports = fresh.sendCrashReports
         muteInBackground = fresh.muteInBackground; pauseInBackground = fresh.pauseInBackground
         shareClipboard = fresh.shareClipboard; shareConcealedClipboard = fresh.shareConcealedClipboard
-        closeAction = fresh.closeAction; checkForUpdates = fresh.checkForUpdates; followMacTime = fresh.followMacTime
+        closeAction = fresh.closeAction; checkForUpdates = fresh.checkForUpdates; shareGameStats = fresh.shareGameStats
+        followMacTime = fresh.followMacTime
         dpiSource = fresh.dpiSource; fixedDPI = fresh.fixedDPI; fixedWidthMM = fresh.fixedWidthMM
         fixedHeightMM = fresh.fixedHeightMM; refreshRate = fresh.refreshRate; followWindowSize = fresh.followWindowSize
         windowWidth = fresh.windowWidth; windowHeight = fresh.windowHeight; windowSizePreset = fresh.windowSizePreset

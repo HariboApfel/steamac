@@ -35,7 +35,7 @@ final class SettingsContext: ObservableObject {
 /// App menu "FX Steam Launcher → Settings…" (Cmd+,): toolbar-style tabs, one SwiftUI form each.
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     enum Tab: Int, CaseIterable {
-        case general, display, mouse, controller, sound, advanced
+        case general, display, mouse, controller, sound, games, advanced
 
         var name: String {
             switch self {
@@ -44,6 +44,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             case .mouse: return "mouse"
             case .controller: return "controller"
             case .sound: return "sound"
+            case .games: return "games"
             case .advanced: return "advanced"
             }
         }
@@ -55,6 +56,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             case .mouse: return String(localized: "Mouse")
             case .controller: return String(localized: "Controller")
             case .sound: return String(localized: "Sound")
+            case .games: return String(localized: "Games", comment: "Settings tab: game statistics")
             case .advanced: return String(localized: "Advanced")
             }
         }
@@ -66,6 +68,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             case .mouse: return "computermouse"
             case .controller: return "gamecontroller"
             case .sound: return "speaker.wave.2"
+            case .games: return "chart.bar.xaxis"
             case .advanced: return "slider.horizontal.3"
             }
         }
@@ -78,6 +81,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             case .mouse: return 470
             case .controller: return 620
             case .sound: return 440
+            case .games: return 620
             case .advanced: return 720
             }
         }
@@ -179,6 +183,7 @@ private struct SettingsTabRoot: View {
                 case .mouse: MouseTab()
                 case .controller: ControllerTab()
                 case .sound: SoundTab()
+                case .games: GamesTab()
                 case .advanced: AdvancedTab()
                 }
             }

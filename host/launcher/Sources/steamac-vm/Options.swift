@@ -285,7 +285,9 @@ struct Options {
                            -screen = as composited on screen, Metal HUD included) |
                            settings TAB|close | settings-dump PNG | set KEY VALUE | restart |
                            update check|startup|state | update press download|skip|later|ok |
-                           update dump PNG (+ -with-vm = beside the VM window, as on screen)
+                           update dump PNG (+ -with-vm = beside the VM window, as on screen) |
+                           stats state|flush|ask|reset-question | stats press share|decline |
+                           stats dump PNG (game statistics question window)
 
     Window keys: Ctrl+Cmd+F fullscreen, Ctrl+Cmd+G capture/release the mouse, Ctrl+Option release,
     Ctrl+Cmd+P Metal Performance HUD on/off (Settings > Display).

@@ -163,6 +163,22 @@
         }
       }
     },
+    "%@ game memory" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ памяти игры"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游戏内存 %@"
+          }
+        }
+      }
+    },
     "%@ is on a FAT32/MS-DOS volume, which cannot store files of 4 GiB or larger. The SteamOS disk and its 10 GiB rootfs exceed this limit: choose an APFS, Mac OS Extended, or exFAT volume" : {
       "localizations" : {
         "ru" : {
@@ -362,6 +378,28 @@
         }
       }
     },
+    "%lld FPS (1%% low %lld)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld FPS (1%% low %2$lld)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld FPS (1%% low %lld)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld FPS（1%% low %lld）"
+          }
+        }
+      }
+    },
     "%lld GB" : {
       "localizations" : {
         "ru" : {
@@ -464,6 +502,22 @@
         }
       }
     },
+    "A random install ID (not linked to you or to crash reports) to count Macs." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Случайный ID установки (не связан ни с вами, ни с отчётами о сбоях) для подсчёта Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一个随机的安装 ID（与你本人和崩溃报告均无关联），用于统计 Mac 数量。"
+          }
+        }
+      }
+    },
     "A random install ID (not linked to you) to count affected Macs." : {
       "localizations" : {
         "ru" : {
@@ -524,6 +578,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "始终包含：应用、macOS 和库版本、Mac 机型、GPU、磁盘大小和启动器设置（绝不含密码或钥匙串内容）。"
+          }
+        }
+      }
+    },
+    "App %@" : {
+      "comment" : "Game without a known name; Steam app ID",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приложение %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用 %@"
           }
         }
       }
@@ -1714,6 +1785,39 @@
         }
       }
     },
+    "Does not start" : {
+      "comment" : "Game rating",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не запускается"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法启动"
+          }
+        }
+      }
+    },
+    "Don't Share" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не делиться"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不共享"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "ru" : {
@@ -1854,6 +1958,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "DualShock 4"
+          }
+        }
+      }
+    },
+    "Each game session: the game's Steam app ID and name, how long it ran and was played, whether its window appeared, frame rate, memory use, Proton version and resolution." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Каждая игровая сессия: Steam App ID и название игры, сколько она работала и сколько в неё играли, появилось ли её окно, частота кадров, расход памяти, версия Proton и разрешение."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次游戏会话：游戏的 Steam App ID 和名称、运行和游玩时长、窗口是否出现、帧率、内存占用、Proton 版本和分辨率。"
           }
         }
       }
@@ -2358,6 +2478,22 @@
         }
       }
     },
+    "Game Statistics" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Статистика игр"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游戏统计"
+          }
+        }
+      }
+    },
     "Game paused" : {
       "localizations" : {
         "ru" : {
@@ -2370,6 +2506,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "游戏已暂停"
+          }
+        }
+      }
+    },
+    "Games" : {
+      "comment" : "Settings tab: game statistics",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Игры"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游戏"
           }
         }
       }
@@ -2633,6 +2786,22 @@
         }
       }
     },
+    "How your games run in SteamOS goes to the public game statistics, so every Mac player can see which games start and how fast they run on which Mac." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Данные о том, как ваши игры работают в SteamOS, попадают в открытую статистику игр: любой игрок на Mac увидит, какие игры запускаются и насколько быстро работают на каком Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的游戏在 SteamOS 中的运行情况会进入公开的游戏统计，让每位 Mac 玩家都能看到哪些游戏能启动、在哪款 Mac 上运行多快。"
+          }
+        }
+      }
+    },
     "I accept Valve's SteamOS license and the Steam Subscriber Agreement" : {
       "localizations" : {
         "ru" : {
@@ -2789,6 +2958,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "局域网 Remote Play"
+          }
+        }
+      }
+    },
+    "Last session: %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последняя сессия: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次会话：%@"
+          }
+        }
+      }
+    },
+    "Last session: no window appeared" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последняя сессия: окно не появилось"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次会话：窗口未出现"
           }
         }
       }
@@ -3250,6 +3451,22 @@
         }
       }
     },
+    "Never: your name, user or computer name, IP address, Steam account, files or anything you type." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Никогда: ваше имя, имя пользователя или компьютера, IP-адрес, аккаунт Steam, файлы и всё, что вы вводите."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "绝不发送：你的姓名、用户名或电脑名称、IP 地址、Steam 账户、文件或你输入的任何内容。"
+          }
+        }
+      }
+    },
     "Never: your name, user or computer name, IP address, Steam account, game titles, files, or the SteamOS console." : {
       "localizations" : {
         "ru" : {
@@ -3407,6 +3624,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此处不可用：%@；将使用 MoltenVK。"
+          }
+        }
+      }
+    },
+    "Not rated" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Без оценки"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未评分"
           }
         }
       }
@@ -3583,6 +3816,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开发布页面"
+          }
+        }
+      }
+    },
+    "Open Statistics Page" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть страницу статистики"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开统计页面"
           }
         }
       }
@@ -3811,6 +4060,23 @@
         }
       }
     },
+    "Playable with issues" : {
+      "comment" : "Game rating",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Играбельно с проблемами"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可玩但有问题"
+          }
+        }
+      }
+    },
     "Player %lld" : {
       "localizations" : {
         "ru" : {
@@ -3891,6 +4157,22 @@
         }
       }
     },
+    "Ratings are optional and shared with the statistics. A game with Share off is kept only on this Mac." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оценки необязательны и отправляются вместе со статистикой. Данные игры с выключенным «Делиться» остаются только на этом Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "评分是可选的，会随统计一起共享。关闭“共享”的游戏的数据只保存在这台 Mac 上。"
+          }
+        }
+      }
+    },
     "Raw GPT disk image (e.g. steamos.img). It stays where it is." : {
       "localizations" : {
         "ru" : {
@@ -3919,6 +4201,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在读取软件包清单…"
+          }
+        }
+      }
+    },
+    "Recorded sessions kept on this Mac: %lld." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Записанных сессий на этом Mac: %lld."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存在这台 Mac 上的会话：%lld。"
           }
         }
       }
@@ -4390,6 +4688,23 @@
         }
       }
     },
+    "Runs well" : {
+      "comment" : "Game rating",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Работает хорошо"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行良好"
+          }
+        }
+      }
+    },
     "SSH port" : {
       "localizations" : {
         "ru" : {
@@ -4470,6 +4785,22 @@
         }
       }
     },
+    "Send this game's sessions and rating" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отправлять сессии и оценку этой игры"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送此游戏的会话和评分"
+          }
+        }
+      }
+    },
     "Sending the report…" : {
       "localizations" : {
         "ru" : {
@@ -4498,6 +4829,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "会话已启动"
+          }
+        }
+      }
+    },
+    "Sessions already recorded on this Mac are included. You can rate games, turn sharing off for single games or altogether in Settings > Games." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Уже записанные на этом Mac сессии тоже будут отправлены. Оценить игры, отключить отправку для отдельных игр или полностью можно в «Настройки > Игры»."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在这台 Mac 上记录的会话也会一并发送。你可以在“设置 > 游戏”中为游戏评分，或为单个游戏或全部关闭共享。"
+          }
+        }
+      }
+    },
+    "Sessions waiting to be sent: %lld." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сессий ждут отправки: %lld."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待发送的会话：%lld。"
+          }
+        }
+      }
+    },
+    "Sessions: %lld" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сессий: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会话：%lld"
           }
         }
       }
@@ -4550,6 +4929,22 @@
         }
       }
     },
+    "Share" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Делиться"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享"
+          }
+        }
+      }
+    },
     "Share clipboard with SteamOS" : {
       "localizations" : {
         "ru" : {
@@ -4562,6 +4957,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "与 SteamOS 共享剪贴板"
+          }
+        }
+      }
+    },
+    "Share game statistics" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Делиться статистикой игр"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享游戏统计"
+          }
+        }
+      }
+    },
+    "Share game statistics?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Делиться статистикой игр?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享游戏统计？"
           }
         }
       }
@@ -4969,6 +5396,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在启动…"
+          }
+        }
+      }
+    },
+    "Starts, but unplayable" : {
+      "comment" : "Game rating",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запускается, но играть нельзя"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "能启动但无法游玩"
           }
         }
       }
@@ -5974,6 +6418,22 @@
         }
       }
     },
+    "The statistics service is not reachable. Sessions waiting to be sent: %lld." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервис статистики недоступен. Сессий ждут отправки: %lld."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接统计服务。等待发送的会话：%lld。"
+          }
+        }
+      }
+    },
     "The virtual machine ended without being asked to (%@)." : {
       "localizations" : {
         "ru" : {
@@ -6022,6 +6482,22 @@
         }
       }
     },
+    "This Mac: model, chip, CPU and GPU cores, memory, macOS version; the VM's size, Vulkan driver and SteamOS build; the launcher version." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот Mac: модель, чип, ядра CPU и GPU, память, версия macOS; размер ВМ, драйвер Vulkan и сборка SteamOS; версия лаунчера."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac：型号、芯片、CPU 和 GPU 核心数、内存、macOS 版本；虚拟机规格、Vulkan 驱动和 SteamOS 版本；启动器版本。"
+          }
+        }
+      }
+    },
     "This SteamOS build is signed with Valve's development key (steamos-dev-images) and can't be verified; choose stable or try again later." : {
       "localizations" : {
         "ru" : {
@@ -6050,6 +6526,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本次启动未配置声音设备。"
+          }
+        }
+      }
+    },
+    "This development build does not send statistics." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта сборка для разработки не отправляет статистику."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此开发版本不发送统计数据。"
           }
         }
       }
@@ -6114,6 +6606,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切换全屏（Ctrl+Cmd+F）"
+          }
+        }
+      }
+    },
+    "Turn on Share game statistics above to send anything" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чтобы что-то отправлялось, включите «Делиться статистикой игр» выше"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需先开启上方的“共享游戏统计”才会发送"
           }
         }
       }
@@ -6537,6 +7045,22 @@
         }
       }
     },
+    "What Is Sent…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Что отправляется…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送内容…"
+          }
+        }
+      }
+    },
     "What happened?" : {
       "localizations" : {
         "ru" : {
@@ -6726,6 +7250,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已是最新版本"
+          }
+        }
+      }
+    },
+    "Your rating of a game, if you set one in Settings > Games." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ваша оценка игры, если вы поставили её в «Настройки > Игры»."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你对游戏的评分（如果你在“设置 > 游戏”中设置了）。"
           }
         }
       }
@@ -7030,6 +7570,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "home 分区容量必须为 8 至 4096 GiB"
+          }
+        }
+      }
+    },
+    "last played %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "последний запуск %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次游玩 %@"
           }
         }
       }

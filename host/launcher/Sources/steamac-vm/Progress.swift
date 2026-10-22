@@ -26,6 +26,17 @@ enum GuestFocus: Equatable {
     case sessionEnded
 }
 
+/// A Steam game's lifecycle in the guest, from the agent's cgroup scan (games.rs): its
+/// `app-steam-app<appid>-*.scope` scopes appeared / are gone, its memory every 5 s, the Proton
+/// prefix version it runs with. Feeds GameStats.
+enum GuestGameEvent: Equatable {
+    case start(appid: Int)
+    /// Anonymous memory of the game's scopes and the guest's used memory (MemTotal - MemAvailable).
+    case memory(appid: Int, anonKiB: Int, guestUsedKiB: Int)
+    case proton(appid: Int, version: String)
+    case exit(appid: Int)
+}
+
 /// Boot / shutdown progress model (local://overlay-contract.md). Fed with hvc0 console lines
 /// (host-side stages, shutdown detection) and with fx.progress lines from the guest agent.
 /// All methods run on the main thread.
@@ -86,6 +97,9 @@ final class BootProgress {
     var onConfig: ((_ ok: Bool, _ reason: String) -> Void)?
     /// Guest agent heartbeat, once a second: `alive <uptime_ms> <loadavg1>`.
     var onAlive: ((_ uptimeMs: Int, _ load: Double) -> Void)?
+    /// `game-start <appid>` / `game-mem <appid> <anon_kib> <guest_used_kib>` /
+    /// `game-proton <appid> <version>` / `game-exit <appid>`.
+    var onGameEvent: ((GuestGameEvent) -> Void)?
 
     private var sawConsole = false
     private var okLines = 0
@@ -207,6 +221,18 @@ final class BootProgress {
         case "alive":
             guard parts.count >= 3, let ms = Int(parts[1]), let load = Double(parts[2]) else { return }
             onAlive?(ms, load)
+        case "game-start", "game-exit", "game-mem", "game-proton":
+            guard parts.count >= 2, let id = Int(parts[1]), id > 0 else { return }
+            switch verb {
+            case "game-start": onGameEvent?(.start(appid: id))
+            case "game-exit": onGameEvent?(.exit(appid: id))
+            case "game-mem":
+                guard parts.count >= 4, let anon = Int(parts[2]), let used = Int(parts[3]) else { return }
+                onGameEvent?(.memory(appid: id, anonKiB: anon, guestUsedKiB: used))
+            default:
+                guard parts.count >= 3 else { return }
+                onGameEvent?(.proton(appid: id, version: parts[2]))
+            }
         default:
             break   // forward compatible
         }

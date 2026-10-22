@@ -228,6 +228,7 @@ over saved values, but only for that launch: the field displays “overridden by
 | Mouse | auto-capture in games; game list (name from `appmanifest_<appid>.acf`, Default/Auto/Off, remove) | — |
 | Controller | which physical controller (GameController) drives the virtual pad (first connected or selected), whether SteamOS gets a pad and what it appears as (`--no-gamepad`, `--pad`, see “Controller”), whether a DualSense is passed through as itself, whether further controllers are players 2–4, swap A/B and X/Y, stick dead zone, live input test | — |
 | Sound | output device (System default follows macOS, or a specific CoreAudio device), volume/mute, Low/Normal/Safe buffer — via `krun_snd_set_*` (looked up with `dlsym`; with an older libkrun the fields are disabled with an explanation) | sound (`--no-sound`) |
+| Games | **Share game statistics** (off until you agree, see “Game statistics”); every game with recorded sessions: sessions, play time, last session's FPS / 1% low / game memory / Vulkan driver, your optional rating (Runs well / Playable with issues / Starts, but unplayable / Does not start) and a per-game **Share** switch | — |
 | Advanced | — | vCPU (`--cpus`), RAM (`--mem`), SSH enable/disable + port (`--ssh-port`, `--no-ssh`) and generated password, network (`--no-net`), disk image (`--disk`), Create New Disk…, Steam client (`--steam-client`, see “Steam client”), Vulkan driver (`--vulkan-driver`, see “Vulkan driver”), D3D11 on the Mac's Metal (wmtr), experimental (`--wmtr-lib`, `--no-wmtr`, see “Vulkan driver”) |
 
 **VM RAM and graphics share the Mac's memory.** Automatic VM RAM is half of physical RAM
@@ -848,6 +849,61 @@ Tests: `STEAMAC_UPDATE_URL` overrides the URL (release JSON or a `/releases` arr
 the launcher version; FIFO `--control-fifo`: `update check|startup|state`, `update press
 download|skip|later|ok|releases`, `update dump PNG` (the window and `-with-vm.png` — together with the
 VM window, as shown on screen).
+
+## Game statistics
+
+Which games start and how fast they run on which Mac, collected from players who agree and shown
+to everyone at <https://fxgl.github.io/steamac/games.html> (`docs/games.html`).
+
+The guest agent watches Steam's game scopes (`app-steam-app<appid>-*.scope`, the same cgroups
+**Pause the game** freezes) on its 1 s heartbeat and reports `game-start <appid>`, `game-mem <appid>
+<anon_kib> <guest_used_kib>` every 5 s (the game's anonymous memory and the guest's used memory),
+`game-proton <appid> <version>` (the prefix's `compatdata/<appid>/version`) and `game-exit <appid>`;
+`game <appid> <name>` follows the first `game-start` or focus of an app id per boot. The launcher
+(`GameStats.swift`) makes one report per game run: how long it ran and had focus (not paused, VM
+not suspended), whether a window ever appeared and after how long (a run without one is a failed
+start), frame rate from the guest's scanout-0 flush intervals while the game has focus (average,
+median, 1% low, hitches over 50 ms per minute; gaps over 1 s are left out; libkrun's
+`present_frame`, the same flushes `--perf-stats` reports), peak game / guest memory, the VM
+process's peak `phys_footprint` on the Mac, resolution, Proton version, and the end (`exit`,
+`shutdown`, `session`). Each report carries the Mac (model, chip, P and total cores, GPU cores,
+RAM, macOS), the VM (vCPUs, RAM, Vulkan driver, wmtr, refresh rate, SteamOS build) and the
+launcher version.
+
+Every report is kept on this Mac (`~/Library/Application Support/es.fxgam.steamac/game-stats.json`,
+20 sessions per game) and listed in **Settings → Games**. Nothing leaves the Mac until **Share
+game statistics** is on: after the first game with a window the launcher asks once, in a window
+beside the VM window that does not take the keyboard or the captured mouse (**Share** / **Don't
+Share**); the switch in Settings → Games changes it at any time. While it is on, finished sessions
+and ratings go to the statistics service (`POST /v1/sessions`, `POST /v1/ratings`), sessions
+recorded earlier included; a game whose **Share** box is off sends nothing and its rating is
+withdrawn (`"rating": "none"`). Uploads go one at a time; HTTP 400/413 drops a report, anything
+else is retried after 10 minutes, at the next session end or the next boot.
+
+Privacy: no name, user or computer name, Steam account, files or typed text; the install ID is a
+random UUID used only for distinct-Mac counts and rate limits (not the crash reports' ID); the
+service uses the client address only as a transient rate-limit key and never stores it.
+
+Service: `services/game-stats` — a Cloudflare Worker with a D1 database (strict validation,
+idempotent session IDs, 30 POSTs per minute per address, a daily cap per install, 5-minute cached
+aggregates `GET /v1/games` and `GET /v1/games/<appid>`). Deploy once:
+
+```sh
+cd services/game-stats && npm install
+npx wrangler login
+npx wrangler d1 create steamac-game-stats      # put the printed database_id into wrangler.toml
+npx wrangler d1 migrations apply steamac-game-stats --remote
+npx wrangler deploy                            # prints https://steamac-game-stats.<account>.workers.dev
+```
+
+The Worker URL goes into `host/launcher/Info.plist` (`SteamacGameStatsURL`) and `docs/assets/games.js`
+(`API`). Local: `npx wrangler d1 migrations apply steamac-game-stats --local && npx wrangler dev`,
+`npm test`.
+
+Tests: `STEAMAC_GAME_STATS_URL` overrides the service (and enables uploads in the dev launcher
+`work/out/steamac-vm`, which otherwise sends nothing), `STEAMAC_GAME_STATS_FILE` the local file;
+FIFO `--control-fifo`: `guest game-start <appid>` etc. feed the tracker, `stats state|flush|ask|dump
+PNG|reset-question`, `stats press share|decline`, `settings games`.
 
 ## Report a Problem
 

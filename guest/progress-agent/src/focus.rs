@@ -34,23 +34,6 @@ use x11rb::rust_connection::RustConnection;
 
 use crate::port::Port;
 
-fn boot_id() -> String {
-    std::fs::read_to_string("/proc/sys/kernel/random/boot_id").unwrap_or_default().trim().to_string()
-}
-
-fn named_path() -> String {
-    format!("/tmp/.fx-progress-named-{}", unsafe { libc::getuid() })
-}
-
-fn load_named() -> std::collections::HashSet<u32> {
-    let Ok(s) = std::fs::read_to_string(named_path()) else { return Default::default() };
-    let mut lines = s.lines();
-    if lines.next().map(str::trim) != Some(boot_id().as_str()) {
-        return Default::default();
-    }
-    lines.filter_map(|l| l.trim().parse().ok()).collect()
-}
-
 pub(crate) const STEAM_UI_APPID: u32 = 769;
 
 struct Conn {
@@ -67,30 +50,18 @@ pub struct Focus {
     next_connect: Instant,
     /// Last message sent (to report only changes).
     last: Option<String>,
-    /// App ids whose `game <appid> <name>` was already handled this boot
-    /// (also those without a manifest: looked up once).
-    named: std::collections::HashSet<u32>,
     /// Desktop Mode session (see the module doc).
     desktop: bool,
 }
 
 impl Focus {
     pub fn new(desktop: bool) -> Focus {
-        Focus { conn: None, next_connect: Instant::now(), last: None, named: load_named(), desktop }
+        Focus { conn: None, next_connect: Instant::now(), last: None, desktop }
     }
 
     /// Desktop Mode: the desktop window has had gamescope's focus (it is on screen).
     pub fn desktop_shown(&self) -> bool {
         self.desktop && self.last.is_some()
-    }
-
-    /// Persist the per-boot set so a restarted agent does not resend names.
-    fn save_named(&self) {
-        let mut s = boot_id();
-        for id in &self.named {
-            s.push_str(&format!("\n{id}"));
-        }
-        let _ = std::fs::write(named_path(), s);
     }
 
     /// X connection fd to poll on, if connected.
@@ -110,7 +81,7 @@ impl Focus {
     /// Connect if needed (rate limited to 1/s), drain pending X events and send
     /// `focus ...` when the focused app changed. `force` resends the current
     /// value even if unchanged (after `ready`, after the port was opened).
-    pub fn pump(&mut self, port: &mut Port, force: bool) {
+    pub fn pump(&mut self, port: &mut Port, force: bool, names: &mut crate::appname::Names) {
         let mut force = force;
         if self.conn.is_none() {
             if Instant::now() < self.next_connect {
@@ -151,11 +122,11 @@ impl Focus {
             }
         }
         if changed {
-            self.report(port, force);
+            self.report(port, force, names);
         }
     }
 
-    fn report(&mut self, port: &mut Port, force: bool) {
+    fn report(&mut self, port: &mut Port, force: bool, names: &mut crate::appname::Names) {
         let Some(c) = self.conn.as_mut() else { return };
         let Some((app, size)) = read_state(c, self.desktop) else {
             // Connection broke: reconnect (and resend) on the next pump.
@@ -178,13 +149,9 @@ impl Focus {
         if force || self.last.as_deref() != Some(msg.as_str()) {
             port.send(&msg);
             self.last = Some(msg);
-            // First focus of this app id this boot: also its display name.
-            if game && !self.named.contains(&app) {
-                self.named.insert(app);
-                self.save_named();
-                if let Some(name) = crate::appname::lookup(app) {
-                    port.send(&format!("game {app} {name}"));
-                }
+            // Focus can precede scope discovery; both paths share deduplication.
+            if game {
+                names.report(app, port);
             }
         }
     }

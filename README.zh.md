@@ -196,6 +196,7 @@ Mac 版 Steam 自身的 UDP 27036 广播不会回灌客户机。
 | 鼠标 | 游戏中自动捕获；游戏列表（名取自 `appmanifest_<appid>.acf`，使用默认/自动/关闭、忘记此游戏） | — |
 | 控制器 | 哪个物理控制器（GameController）驱动虚拟手柄（首个已连接或自选），SteamOS 是否获得手柄及呈现为何种（`--no-gamepad`、`--pad`，见“控制器”），DualSense 是否按本身直通，其余控制器是否成为玩家 2–4，A/B 与 X/Y 互换，摇杆死区，实时输入测试 | — |
 | 声音 | 输出设备（系统默认跟随 macOS，或指定 CoreAudio 设备），音量/静音，低（10 毫秒）/普通（20 毫秒）/稳定（60 毫秒）缓冲——经 `krun_snd_set_*`（`dlsym` 查找；旧 libkrun 下字段置灰并说明） | 声音（`--no-sound`） |
+| 游戏 | **共享游戏统计**（同意前关闭，见“游戏统计”）；所有已记录会话的游戏：会话数、游玩时间、上次会话的 FPS / 1% low / 游戏内存 / Vulkan 驱动、可选的个人评价（运行良好 / 可玩但有问题 / 能启动但无法游玩 / 无法启动）与每款游戏的**共享**开关 | — |
 | 高级 | — | vCPU（`--cpus`）、内存（`--mem`）、SSH 开关 + 端口（`--ssh-port`、`--no-ssh`）与生成密码、网络（`--no-net`）、磁盘映像（`--disk`）、新建磁盘…、Steam 客户端（`--steam-client`，见“Steam 客户端”）、Vulkan 驱动（`--vulkan-driver`，见“Vulkan 驱动”）、在 Mac 的 Metal 上运行 D3D11（wmtr），实验性（`--wmtr-lib`、`--no-wmtr`，见“Vulkan 驱动”） |
 
 **虚拟机内存与图形共享 Mac 的内存。** 自动分配的虚拟机内存为物理内存的一半（4–16 GiB）。
@@ -593,6 +594,57 @@ FXSteamLauncher/<version>`（加标准 HTTP 头与上次应答 ETag，以便 Git
 测试：`STEAMAC_UPDATE_URL` 覆盖 URL（release JSON 或 `/releases` 数组，`http(s)://` 或
 `file://`；同时为开发版启动器启用启动检查），`STEAMAC_FAKE_VERSION` 覆盖启动器版本；FIFO `--control-fifo`：`update check|startup|state`、`update press
 download|skip|later|ok|releases`、`update dump PNG`（窗口与 `-with-vm.png`——与虚拟机窗口同屏）。
+
+## 游戏统计
+
+哪些游戏能启动、在何种 Mac 上运行多快：由同意共享的玩家提供数据，所有人均可在
+<https://fxgl.github.io/steamac/games.html>（`docs/games.html`）查看。
+
+客户机代理在每秒一次的心跳中监视 Steam 的游戏 scope（`app-steam-app<appid>-*.scope`，
+即**暂停游戏**冻结的那些 cgroup），报告 `game-start <appid>`、每 5 秒一次的
+`game-mem <appid> <anon_kib> <guest_used_kib>`（游戏的匿名内存与客户机已用内存）、
+`game-proton <appid> <version>`（前缀中的 `compatdata/<appid>/version`）和
+`game-exit <appid>`；每次启动后，某 app id 首次 `game-start` 或获得焦点后会跟随
+`game <appid> <name>`。启动器（`GameStats.swift`）为每次游戏运行生成一份报告：
+运行时长与持有焦点的时长（未暂停且虚拟机未挂起），是否曾出现窗口以及等待时间（无窗口的运行视为启动失败），
+游戏持有焦点时由客户机 scanout-0 刷新间隔得出的帧率（平均值、中位数、1% low、
+每分钟超过 50 毫秒的卡顿次数；排除超过 1 秒的间隔；来自 libkrun 的 `present_frame`，
+与 `--perf-stats` 报告的刷新相同），游戏 / 客户机内存峰值、Mac 上虚拟机进程的
+`phys_footprint` 峰值、分辨率、Proton 版本及结束原因（`exit`、`shutdown`、`session`）。
+每份报告附带 Mac 信息（型号、芯片、性能核心数与总核心数、GPU 核心数、内存、macOS）、
+虚拟机信息（vCPU、内存、Vulkan 驱动、wmtr、刷新率、SteamOS 构建版本）及启动器版本。
+
+每份报告保存在本 Mac（`~/Library/Application Support/es.fxgam.steamac/game-stats.json`，
+每款游戏 20 次会话），并列于**设置 → 游戏**。启用**共享游戏统计**前，任何数据都不会离开 Mac：
+首款出现窗口的游戏运行后，启动器仅询问一次，询问窗口位于虚拟机窗口旁，不抢走键盘或捕获的鼠标
+（**共享** / **不共享**）；设置 → 游戏中的开关可随时更改此选择。开启时，已结束的会话与评价
+会发送到统计服务（`POST /v1/sessions`、`POST /v1/ratings`），也包括之前记录的会话；
+关闭某款游戏的**共享**复选框后，该游戏不发送任何数据，且其评价会撤回（`"rating": "none"`）。
+上传逐一进行；HTTP 400/413 会丢弃报告，其他错误则在 10 分钟后、下次会话结束或下次启动时重试。
+
+隐私：不包含姓名、用户名或计算机名、Steam 账号、文件或输入的文字；安装 ID 为随机 UUID，
+仅用于统计不同 Mac 的数量及限流（不是崩溃报告的 ID）；服务仅将客户端地址用作临时限流键，绝不保存。
+
+服务：`services/game-stats`——使用 D1 数据库的 Cloudflare Worker（严格校验、幂等会话 ID、
+每个地址每分钟 30 次 POST、每个安装的每日上限、缓存 5 分钟的聚合数据
+`GET /v1/games` 与 `GET /v1/games/<appid>`）。首次部署：
+
+```sh
+cd services/game-stats && npm install
+npx wrangler login
+npx wrangler d1 create steamac-game-stats      # put the printed database_id into wrangler.toml
+npx wrangler d1 migrations apply steamac-game-stats --remote
+npx wrangler deploy                            # prints https://steamac-game-stats.<account>.workers.dev
+```
+
+Worker URL 填入 `host/launcher/Info.plist`（`SteamacGameStatsURL`）与 `docs/assets/games.js`
+（`API`）。本地运行：`npx wrangler d1 migrations apply steamac-game-stats --local && npx wrangler dev`、
+`npm test`。
+
+测试：`STEAMAC_GAME_STATS_URL` 覆盖服务地址（同时为开发版启动器 `work/out/steamac-vm` 启用上传，
+否则它不发送任何数据），`STEAMAC_GAME_STATS_FILE` 覆盖本地文件；FIFO `--control-fifo`：
+`guest game-start <appid>` 等为跟踪器提供事件，`stats state|flush|ask|dump PNG|reset-question`、
+`stats press share|decline`、`settings games`。
 
 ## 报告问题
 
