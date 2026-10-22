@@ -329,6 +329,7 @@ private final class PadSlot {
     func setController(_ next: GCController?) {
         if next === controller { return }
         controller?.extendedGamepad?.valueChangedHandler = nil
+        controller?.extendedGamepad?.buttonHome?.pressedChangedHandler = nil
         controller = next
         rumble.attach(next)
         if let c = next, let pad = c.extendedGamepad {
@@ -337,7 +338,22 @@ private final class PadSlot {
             pad.buttonHome?.preferredSystemGestureState = .disabled
             pad.buttonOptions?.preferredSystemGestureState = .disabled
             pad.buttonMenu.preferredSystemGestureState = .disabled
-            pad.valueChangedHandler = { [weak self] pad, _ in self?.update(from: pad) }
+            // STEAMAC-4Y: distinguish a missing/consumed Home input from a profile callback
+            // or guest delivery problem. The reported pad is a DualShock 4, not passthrough.
+            log("\(tag): Home/PS \(GamepadBridge.homeDiagnostic(pad.buttonHome))")
+            pad.buttonHome?.pressedChangedHandler = { [weak self] button, _, pressed in
+                guard let self else { return }
+                log("\(self.tag): Home/PS button callback \(pressed ? "pressed" : "released"), "
+                    + GamepadBridge.homeDiagnostic(button))
+            }
+            pad.valueChangedHandler = { [weak self] pad, element in
+                guard let self else { return }
+                if element === pad.buttonHome {
+                    log("\(self.tag): Home/PS profile callback, \(GamepadBridge.homeDiagnostic(pad.buttonHome)); "
+                        + self.stateLine)
+                }
+                self.update(from: pad)
+            }
         } else {
             log("\(tag): none connected")
         }
@@ -444,8 +460,15 @@ private final class PadSlot {
         for a in GamepadBridge.axisCodes where next.axes[a] != state.axes[a] {
             events.append("\(EV.ABS):\(a):\(next.axes[a] ?? 0)")
         }
+        let homeChanged = next.buttons[BTN.MODE] != state.buttons[BTN.MODE]
         state = next
-        if !events.isEmpty { _ = port.send("ev " + events.joined(separator: " ")) }
+        if !events.isEmpty {
+            let sent = port.send("ev " + events.joined(separator: " "))
+            if homeChanged {
+                log("\(tag): Home/PS \(next.buttons[BTN.MODE] == true ? "pressed" : "released") "
+                    + (sent ? "sent to SteamOS" : "not sent: pad port unavailable"))
+            }
+        }
     }
 
     /// A pad even without a controller (--input-selftest, control `pad on`) / only with one again.
@@ -475,6 +498,7 @@ private final class PadSlot {
     var stateLine: String {
         "pad \(index == 0 ? "" : "\(index + 1) ")\(current?.title ?? "none"), service \(serviceReady ? "ready" : "not ready")\(hidCapable ? " (hid)" : ""), "
             + "controller \(controller.map(GamepadBridge.logDisplayName(of:)) ?? "none"), rumble \(rumble.level.strong) \(rumble.level.weak)"
+            + ", Home/PS \(GamepadBridge.homeDiagnostic(controller?.extendedGamepad?.buttonHome))"
             + (hid.map { ", HID DualSenses \($0.devices.count), hid inputs \(hidInputs)" } ?? "")
     }
 }
@@ -545,6 +569,14 @@ final class GamepadBridge {
     static func logDisplayName(of c: GCController) -> String {
         let vendor = c.vendorName ?? "Controller"
         return vendor == c.productCategory ? vendor : "\(vendor) (\(c.productCategory))"
+    }
+
+    /// Connection/report diagnostics only: a preferred disabled gesture is not a guarantee
+    /// that macOS honors it (GCControllerElement); do not infer that a missing input was sent.
+    static func homeDiagnostic(_ button: GCControllerButtonInput?) -> String {
+        guard let button else { return "unavailable in GameController" }
+        return "\(button.isPressed ? "pressed" : "released"), system-bound=\(button.isBoundToSystemGesture), "
+            + "preferred-gesture=\(button.preferredSystemGestureState.rawValue)"
     }
 
     /// Extended gamepads in connection order.
